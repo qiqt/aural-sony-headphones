@@ -132,3 +132,38 @@ void Headphones::setChanges()
         }
     }
 }
+
+void Headphones::requestBattery()
+{
+	// v1 battery: send BATTERY_LEVEL_REQUEST (0x10, single), then read the 0x11 reply.
+	try
+	{
+		this->_conn.sendCommand(CommandSerializer::serializeBatteryRequest());
+		auto msg = this->_conn.readMessage();
+		if (msg.dataType == DATA_TYPE::DATA_MDR && msg.messageBytes.size() >= 4)
+		{
+			unsigned char cmd = static_cast<unsigned char>(msg.messageBytes[0]);
+			if (cmd == 0x11 || cmd == 0x13) // BATTERY_LEVEL_REPLY / _NOTIFY
+			{
+				std::lock_guard guard(this->_propertyMtx);
+				this->_batteryLevel = static_cast<unsigned char>(msg.messageBytes[2]);
+				this->_batteryCharging = msg.messageBytes[3] != 0;
+			}
+			this->_conn.sendAck(msg.seqNumber);
+		}
+	}
+	catch (const RecoverableException&)
+	{
+		// Leave battery unknown; a failed poll shouldn't tear down the connection.
+	}
+}
+
+int Headphones::getBatteryLevel()
+{
+	return this->_batteryLevel;
+}
+
+bool Headphones::isBatteryCharging()
+{
+	return this->_batteryCharging;
+}

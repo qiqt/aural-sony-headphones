@@ -35,7 +35,14 @@ public:
 	
 	bool isChanged();
 	void setChanges();
+
+	void requestBattery();
+	int getBatteryLevel();      // 0-100, or -1 if unknown
+	bool isBatteryCharging();
 private:
+	int _batteryLevel = -1;
+	bool _batteryCharging = false;
+
 	Property<bool> _ambientSoundControl = { 0 };
 	Property<bool> _focusOnVoice = { 0 };
 	Property<int> _asmLevel = { 0 };

@@ -50,5 +50,13 @@ namespace CommandSerializer
         return {0x48, static_cast<char>(type), static_cast<char>(preset)};
     }
 
+	Buffer serializeBatteryRequest()
+	{
+		Buffer ret;
+		ret.push_back(0x10); // BATTERY_LEVEL_REQUEST (v1)
+		ret.push_back(0x00); // battery type: SINGLE
+		return ret;
+	}
+
 }
 
