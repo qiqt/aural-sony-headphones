@@ -53,5 +53,10 @@ namespace CommandSerializer
 	// bands), each in the range -10..+10 (sent biased by +10).
 	Buffer serializeEqualizerPreset(unsigned char presetCode);
 	Buffer serializeEqualizerCustomBands(int clearBass, const std::vector<int>& bands);
+
+	// v1 sound-quality / system serializers (from Gadgetbridge SonyProtocolImplV1).
+	Buffer serializeAudioUpsampling(bool enabled);   // DSEE / DSEE Extreme; send as DATA_MDR
+	Buffer serializeVoiceGuidance(bool enabled);     // voice guidance; send as DATA_MDR_NO2
+	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode);
 }
 

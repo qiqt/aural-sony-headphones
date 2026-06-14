@@ -66,6 +66,18 @@ public:
 	void setEqualizer(const EqualizerConfig& cfg);
 	EqualizerConfig getEqualizer();
 
+	// DSEE / DSEE Extreme upscaling
+	void setAudioUpsampling(bool val);
+	bool getAudioUpsampling();
+
+	// Voice guidance prompts
+	void setVoiceGuidance(bool val);
+	bool getVoiceGuidance();
+
+	// Auto power-off
+	void setAutoPowerOff(AUTO_POWER_OFF val);
+	AUTO_POWER_OFF getAutoPowerOff();
+
 	// Capabilities reported by the device. 0 until the reply arrives.
 	unsigned int getCapabilities();
 	// True if a feature is supported, or if capabilities haven't been read yet.
@@ -110,6 +122,11 @@ private:
 	Property<int> _dev1 = { 0, 0 }, _dev2 = { 0, 0 };
 
 	Property<EqualizerConfig> _eq;
+
+	// Write-only system settings (no read-back, to avoid clobbering the device on connect).
+	Property<bool> _audioUpsampling = { false, false };
+	Property<bool> _voiceGuidance = { false, false };
+	Property<AUTO_POWER_OFF> _autoPowerOff = { AUTO_POWER_OFF::OFF, AUTO_POWER_OFF::OFF };
 
 	std::mutex _propertyMtx;
 

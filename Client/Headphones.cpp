@@ -157,6 +157,39 @@ EqualizerConfig Headphones::getEqualizer()
 	return this->_eq.current;
 }
 
+void Headphones::setAudioUpsampling(bool val)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_audioUpsampling.desired = val;
+}
+
+bool Headphones::getAudioUpsampling()
+{
+	return this->_audioUpsampling.current;
+}
+
+void Headphones::setVoiceGuidance(bool val)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_voiceGuidance.desired = val;
+}
+
+bool Headphones::getVoiceGuidance()
+{
+	return this->_voiceGuidance.current;
+}
+
+void Headphones::setAutoPowerOff(AUTO_POWER_OFF val)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_autoPowerOff.desired = val;
+}
+
+AUTO_POWER_OFF Headphones::getAutoPowerOff()
+{
+	return this->_autoPowerOff.current;
+}
+
 bool Headphones::isChanged()
 {
 	return !(this->_ambientSoundControl.isFulfilled() &&
@@ -169,7 +202,10 @@ bool Headphones::isChanged()
 		this->_s2cOptions.isFulfilled() &&
 		this->_dev1.isFulfilled() &&
 		this->_dev2.isFulfilled() &&
-		this->_eq.isFulfilled());
+		this->_eq.isFulfilled() &&
+		this->_audioUpsampling.isFulfilled() &&
+		this->_voiceGuidance.isFulfilled() &&
+		this->_autoPowerOff.isFulfilled());
 }
 
 void Headphones::setChanges()
@@ -214,6 +250,32 @@ void Headphones::setChanges()
 
 		std::lock_guard guard(this->_propertyMtx);
 		this->_eq.fulfill();
+	}
+
+	if (!(this->_audioUpsampling.isFulfilled()))
+	{
+		this->_conn.sendCommand(CommandSerializer::serializeAudioUpsampling(this->_audioUpsampling.desired));
+
+		std::lock_guard guard(this->_propertyMtx);
+		this->_audioUpsampling.fulfill();
+	}
+
+	if (!(this->_voiceGuidance.isFulfilled()))
+	{
+		// Voice guidance lives in the COMMAND_2 namespace, so it goes out as DATA_MDR_NO2.
+		this->_conn.sendCommand(CommandSerializer::serializeVoiceGuidance(this->_voiceGuidance.desired),
+			DATA_TYPE::DATA_MDR_NO2);
+
+		std::lock_guard guard(this->_propertyMtx);
+		this->_voiceGuidance.fulfill();
+	}
+
+	if (!(this->_autoPowerOff.isFulfilled()))
+	{
+		this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(this->_autoPowerOff.desired));
+
+		std::lock_guard guard(this->_propertyMtx);
+		this->_autoPowerOff.fulfill();
 	}
 
     {

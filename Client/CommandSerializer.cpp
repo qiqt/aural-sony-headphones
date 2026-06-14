@@ -100,11 +100,57 @@ namespace CommandSerializer
 		Buffer ret;
 		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::EQUALIZER_SET));
 		ret.push_back(0x01);        // EqEbb inquired type: preset EQ
-		ret.push_back(0xff);        // custom/manual preset marker
+		ret.push_back(static_cast<char>(0xff)); // custom/manual preset marker
 		ret.push_back(static_cast<unsigned char>(1 + bands.size())); // clear bass + N bands
 		ret.push_back(static_cast<unsigned char>(clearBass + 10));   // bias -10..+10 -> 0..20
 		for (int band : bands)
 			ret.push_back(static_cast<unsigned char>(band + 10));
+		return ret;
+	}
+
+	Buffer serializeAudioUpsampling(bool enabled)
+	{
+		// DSEE / DSEE Extreme. Payload: <cmd> 02 00 <0/1>
+		Buffer ret;
+		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::AUDIO_UPSAMPLING_SET));
+		ret.push_back(0x02);
+		ret.push_back(0x00);
+		ret.push_back(enabled ? 0x01 : 0x00);
+		return ret;
+	}
+
+	Buffer serializeVoiceGuidance(bool enabled)
+	{
+		// Voice guidance prompts. Payload: <cmd> 01 01 <0/1>. Sent as DATA_MDR_NO2 by the caller.
+		Buffer ret;
+		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::VOICE_NOTIFICATION_SET));
+		ret.push_back(0x01);
+		ret.push_back(0x01);
+		ret.push_back(enabled ? 0x01 : 0x00);
+		return ret;
+	}
+
+	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode)
+	{
+		// Auto power-off. Payload: <cmd> 04 01 <code0> <code1>. The 0xf8 command is shared with
+		// other system settings; sub-byte 0x04 selects the auto-power-off function.
+		unsigned char c0 = 0x11, c1 = 0x00; // default: OFF (do not power off)
+		switch (mode)
+		{
+		case AUTO_POWER_OFF::OFF:            c0 = 0x11; c1 = 0x00; break;
+		case AUTO_POWER_OFF::AFTER_5_MIN:    c0 = 0x00; c1 = 0x00; break;
+		case AUTO_POWER_OFF::AFTER_30_MIN:   c0 = 0x01; c1 = 0x01; break;
+		case AUTO_POWER_OFF::AFTER_1_HOUR:   c0 = 0x02; c1 = 0x02; break;
+		case AUTO_POWER_OFF::AFTER_3_HOUR:   c0 = 0x03; c1 = 0x03; break;
+		case AUTO_POWER_OFF::WHEN_TAKEN_OFF: c0 = 0x10; c1 = 0x00; break;
+		}
+
+		Buffer ret;
+		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::AUTO_POWER_OFF_SET));
+		ret.push_back(0x04);
+		ret.push_back(0x01);
+		ret.push_back(c0);
+		ret.push_back(c1);
 		return ret;
 	}
 

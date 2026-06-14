@@ -147,7 +147,12 @@ enum class COMMAND_TYPE : signed char
 	EQUALIZER_GET = (signed char)0x56,
 	EQUALIZER_RET = (signed char)0x57,
 	EQUALIZER_SET = (signed char)0x58,
-	EQUALIZER_NOTIFY = (signed char)0x59
+	EQUALIZER_NOTIFY = (signed char)0x59,
+
+	// v1 sound-quality / system commands (from Gadgetbridge SonyProtocolImplV1).
+	AUDIO_UPSAMPLING_SET = (signed char)0xe8,    // DSEE / DSEE Extreme upscaling (sent as DATA_MDR)
+	VOICE_NOTIFICATION_SET = (signed char)0x48,  // voice guidance toggle (sent as DATA_MDR_NO2)
+	AUTO_POWER_OFF_SET = (signed char)0xf8       // shared system cmd; sub-byte 0x04 = auto power-off
 };
 
 // v1 equalizer preset ids. MANUAL/CUSTOM_* recall the user's saved band values.
@@ -223,6 +228,19 @@ enum class S2C_TOGGLE : signed char
 {
 	ACTIVE = 1,
 	INACTIVE = 0
+};
+
+// Auto power-off selectable options (v1). Each maps to a 2-byte code in the serializer.
+// Note: the WH-1000XM3 exposes the timed options; the XM4 typically offers only OFF and
+// WHEN_TAKEN_OFF. Unsupported options are simply ignored by the device.
+enum class AUTO_POWER_OFF : signed char
+{
+	OFF = 0,            // never power off automatically
+	AFTER_5_MIN = 1,
+	AFTER_30_MIN = 2,
+	AFTER_1_HOUR = 3,
+	AFTER_3_HOUR = 4,
+	WHEN_TAKEN_OFF = 5
 };
 
 enum class MULTI_POINT_COMMANDS : signed char
