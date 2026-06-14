@@ -1,3 +1,5 @@
+#pragma once
+
 #include "BluetoothWrapper.h"
 #include "Constants.h"
 
@@ -36,7 +38,14 @@ public:
 	bool isChanged();
 	void setChanges();
 
-	void requestBattery();
+	// Run the v1 connect handshake (init, then request the state we care about).
+	// Replies arrive asynchronously and are applied via setStateFromReply().
+	void queryState();
+
+	// Apply an incoming DATA frame to our state. Called from the Listener thread.
+	void setStateFromReply(const CommandSerializer::Message& msg);
+
+	void requestBattery();      // sends the GET; the reply updates state asynchronously
 	int getBatteryLevel();      // 0-100, or -1 if unknown
 	bool isBatteryCharging();
 private:

@@ -133,28 +133,53 @@ void Headphones::setChanges()
     }
 }
 
-void Headphones::requestBattery()
+void Headphones::queryState()
 {
-	// v1 battery: send BATTERY_LEVEL_REQUEST (0x10, single), then read the 0x11 reply.
+	// v1 connect handshake. Each send blocks only until it's ACKed; the actual replies
+	// arrive asynchronously on the Listener thread and land in setStateFromReply().
+	// Wrapped defensively: a device that ignores one request shouldn't block the others.
 	try
 	{
-		this->_conn.sendCommand(CommandSerializer::serializeBatteryRequest());
-		auto msg = this->_conn.readMessage();
-		if (msg.dataType == DATA_TYPE::DATA_MDR && msg.messageBytes.size() >= 4)
-		{
-			unsigned char cmd = static_cast<unsigned char>(msg.messageBytes[0]);
-			if (cmd == 0x11 || cmd == 0x13) // BATTERY_LEVEL_REPLY / _NOTIFY
-			{
-				std::lock_guard guard(this->_propertyMtx);
-				this->_batteryLevel = static_cast<unsigned char>(msg.messageBytes[2]);
-				this->_batteryCharging = msg.messageBytes[3] != 0;
-			}
-			this->_conn.sendAck(msg.seqNumber);
-		}
+		this->_conn.sendCommand({ 0x00, 0x00 }); // INIT_REQUEST
 	}
-	catch (const RecoverableException&)
+	catch (const RecoverableException&) {}
+
+	try
 	{
-		// Leave battery unknown; a failed poll shouldn't tear down the connection.
+		this->requestBattery();
+	}
+	catch (const RecoverableException&) {}
+}
+
+void Headphones::requestBattery()
+{
+	// Ask for the battery level. The RET (and any later NOTIFY) is applied in setStateFromReply().
+	this->_conn.sendCommand(CommandSerializer::serializeBatteryRequest());
+}
+
+void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
+{
+	if (msg.messageBytes.empty())
+		return;
+
+	unsigned char cmd = static_cast<unsigned char>(msg.messageBytes[0]);
+	switch (cmd)
+	{
+	case BATTERY_LEVEL_RET:
+	case BATTERY_LEVEL_NOTIFY:
+	{
+		// Payload: [cmd][batteryType][level 0-100][chargingStatus]
+		if (msg.messageBytes.size() >= 4)
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_batteryLevel = static_cast<unsigned char>(msg.messageBytes[2]);
+			this->_batteryCharging = msg.messageBytes[3] != 0;
+		}
+		break;
+	}
+	default:
+		// Other replies (capabilities, settings, ...) are handled in later phases.
+		break;
 	}
 }
 

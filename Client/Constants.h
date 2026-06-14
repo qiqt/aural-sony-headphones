@@ -128,6 +128,12 @@ enum class COMMAND_TYPE : signed char
 	NCASM_SET_PARAM = 104
 };
 
+// v1 (legacy) battery, part of the POWER function. GET asks for the level; the headphones
+// answer with RET, and also push NOTIFY frames unprompted when the level changes.
+inline constexpr unsigned char BATTERY_LEVEL_GET = 0x10;
+inline constexpr unsigned char BATTERY_LEVEL_RET = 0x11;
+inline constexpr unsigned char BATTERY_LEVEL_NOTIFY = 0x13;
+
 enum class VPT_PRESET_ID : signed char
 {
 	OFF = 0,
