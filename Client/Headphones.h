@@ -12,6 +12,7 @@ struct Property {
 
 	void fulfill();
 	bool isFulfilled();
+	void setState(T val);   // sync both current and desired from a device reply
 };
 
 class Headphones {
@@ -34,7 +35,27 @@ public:
 
 	void setVptType(int val);
 	int getVptType();
-	
+
+	// ANC / pressure optimizer
+	void setOptimizerState(OPTIMIZER_STATE val);
+	OPTIMIZER_STATE getOptimizerState();
+
+	// Speak-to-Chat
+	void setS2CToggle(S2C_TOGGLE val);
+	void setS2COptions(int sensitivity, bool voice, int offTime);
+	S2C_TOGGLE getS2CToggle();
+	unsigned int getS2COptions();
+
+	// Multipoint. Returns copies because the Listener thread can rewrite the list at any time.
+	std::vector<BluetoothDevice> getDevices();
+	std::pair<int, int> getConnectedDevices();
+	void setMultiPointConnection(int connectionId, int newDevice, int oldDevice);
+
+	// Capabilities reported by the device. 0 until the reply arrives.
+	unsigned int getCapabilities();
+	// True if a feature is supported, or if capabilities haven't been read yet.
+	bool supportsFeature(DEVICE_CAPABILITIES cap);
+
 	bool isChanged();
 	void setChanges();
 
@@ -49,14 +70,30 @@ public:
 	int getBatteryLevel();      // 0-100, or -1 if unknown
 	bool isBatteryCharging();
 private:
+	void queryDeviceCapabilities();
+	void queryDevices();
+	void _connectDevice(int deviceIdx);
+	void _disconnectDevice(int deviceIdx);
+
 	int _batteryLevel = -1;
 	bool _batteryCharging = false;
+
+	unsigned int _capabilities = 0;
 
 	Property<bool> _ambientSoundControl = { 0 };
 	Property<bool> _focusOnVoice = { 0 };
 	Property<int> _asmLevel = { 0 };
 	Property<SOUND_POSITION_PRESET> _surroundPosition = { SOUND_POSITION_PRESET::OUT_OF_RANGE, SOUND_POSITION_PRESET::OFF };
 	Property<int> _vptType = { 0 };
+
+	Property<OPTIMIZER_STATE> _optimizerState = { OPTIMIZER_STATE::IDLE, OPTIMIZER_STATE::IDLE };
+	Property<S2C_TOGGLE> _speakToChat = { S2C_TOGGLE::INACTIVE, S2C_TOGGLE::INACTIVE };
+	Property<unsigned int> _s2cOptions = { 0 };
+
+	// index 0 is the empty "no device" slot; _dev1/_dev2 index into _savedDevices
+	std::vector<BluetoothDevice> _savedDevices = { BluetoothDevice{"", ""} };
+	Property<int> _dev1 = { 0, 0 }, _dev2 = { 0, 0 };
+
 	std::mutex _propertyMtx;
 
 	BluetoothWrapper& _conn;
@@ -72,4 +109,11 @@ template<class T>
 inline bool Property<T>::isFulfilled()
 {
 	return this->desired == this->current;
+}
+
+template<class T>
+inline void Property<T>::setState(T val)
+{
+	this->current = val;
+	this->desired = val;
 }

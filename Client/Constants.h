@@ -125,7 +125,23 @@ enum class NC_DUAL_SINGLE_VALUE : signed char
 enum class COMMAND_TYPE : signed char
 {
 	VPT_SET_PARAM = 72,
-	NCASM_SET_PARAM = 104
+	NCASM_SET_PARAM = 104,
+
+	// v1 feature command IDs (proven on XM4, from PR #103)
+	XM4_OPTIMIZER_PARAM = (signed char)0x84,
+	XM4_S2C_TOGGLE_PARAM = (signed char)0xf8,
+	XM4_S2C_OPTIONS_PARAM = (signed char)0xfc,
+	MULTI_POINT_PARAM = (signed char)0x3c,
+
+	XM4_OPTIMIZER_RESPONSE = (signed char)0x85,
+	DEVICES_QUERY_RESPONSE = (signed char)0x37,
+	DEVICES_STATE_RESPONSE = (signed char)0x39,
+	CAPABILITY_QUERY_RESPONSE = (signed char)0x07,
+
+	CAPABILITY_QUERY = (signed char)0x06,
+	MULTI_POINT_DEVICES_QUERY = (signed char)0x36,
+	S2C_QUERY = (signed char)0xf6,
+	S2C_OPTIONS_QUERY = (signed char)0xfa
 };
 
 // v1 (legacy) battery, part of the POWER function. GET asks for the level; the headphones
@@ -172,4 +188,43 @@ enum class VPT_INQUIRED_TYPE : signed char
 	VPT = 1,
 	SOUND_POSITION = 2,
 	OUT_OF_RANGE = -1
+};
+
+enum class OPTIMIZER_STATE : signed char
+{
+	IDLE = 0,
+	OPTIMIZING = 1
+};
+
+enum class S2C_TOGGLE : signed char
+{
+	ACTIVE = 1,
+	INACTIVE = 0
+};
+
+enum class MULTI_POINT_COMMANDS : signed char
+{
+	CONNECT = (signed char)0x01,
+	DISCONNECT = (signed char)0x00,
+	UNPAIR = (signed char)0x02
+};
+
+// Bitset of device features, populated from the capability query reply.
+enum DEVICE_CAPABILITIES
+{
+	NC_ASM = 0x01 << 0,
+	VPT = 0x01 << 1,
+	MULTI_POINT = 0x01 << 2,
+	OPTIMIZER = 0x01 << 3,
+	SPEAK_TO_CHAT = 0x01 << 4
+};
+
+// Function-type bytes as reported inside the capability query reply.
+enum class FUNCTION_TYPE : signed char
+{
+	DEVICE_MANAGEMENT = 56,
+	VPT = 65,
+	OPTIMIZER = -127,
+	NC_ASM = 98,
+	SMART_TALKING_MODE = -11
 };

@@ -53,10 +53,37 @@ namespace CommandSerializer
 	Buffer serializeBatteryRequest()
 	{
 		Buffer ret;
-		ret.push_back(0x10); // BATTERY_LEVEL_REQUEST (v1)
+		ret.push_back(BATTERY_LEVEL_GET); // BATTERY_LEVEL_REQUEST (v1)
 		ret.push_back(0x00); // battery type: SINGLE
 		return ret;
 	}
+
+    Buffer serializeXM4OptimizeCommand(OPTIMIZER_STATE state)
+    {
+        return {static_cast<char>(0x84), 0x01, 0x00, static_cast<char>(state)};
+    }
+
+    Buffer serializeXM4SpeakToChat(S2C_TOGGLE state)
+    {
+        return {static_cast<char>(0xf8), 0x05, 0x01, static_cast<char>(state)};
+    }
+
+    Buffer serializeXM4_S2C_Options(unsigned char sensitivity, unsigned char focus, unsigned char resumeDelay)
+    {
+        return {static_cast<char>(0xfc), 0x05, 0x00,
+            static_cast<char>(sensitivity), static_cast<char>(focus), static_cast<char>(resumeDelay)};
+    }
+
+    Buffer serializeMultiPointCommand(MULTI_POINT_COMMANDS operation, std::string address)
+    {
+        Buffer payload(address.size() + 4);
+        payload[0] = 0x3c;
+        payload[1] = 0x01;
+        payload[2] = 0x00;
+        payload[3] = static_cast<char>(operation);
+        std::copy(address.begin(), address.end(), payload.begin() + 4);
+        return payload;
+    }
 
 }
 

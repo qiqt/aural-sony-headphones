@@ -42,5 +42,11 @@ namespace CommandSerializer
 
 	// v1 battery level request (BATTERY_LEVEL_REQUEST 0x10, single battery 0x00). Reply is 0x11.
 	Buffer serializeBatteryRequest();
+
+	// v1 feature serializers (proven on XM4, from PR #103)
+	Buffer serializeXM4OptimizeCommand(OPTIMIZER_STATE state);
+	Buffer serializeXM4SpeakToChat(S2C_TOGGLE s2cState);
+	Buffer serializeXM4_S2C_Options(unsigned char sensitivity, unsigned char voice, unsigned char offTime);
+	Buffer serializeMultiPointCommand(MULTI_POINT_COMMANDS cmd, std::string macAddr);
 }
 
