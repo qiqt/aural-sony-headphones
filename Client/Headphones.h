@@ -15,6 +15,17 @@ struct Property {
 	void setState(T val);   // sync both current and desired from a device reply
 };
 
+// v1 equalizer state: a preset plus the manual band levels (clear bass + 5 bands), each -10..+10.
+struct EqualizerConfig {
+	int preset = 0;                              // EQ_PRESET code
+	int clearBass = 0;                           // -10..+10
+	std::vector<int> bands = { 0, 0, 0, 0, 0 };  // -10..+10 each
+
+	bool operator==(const EqualizerConfig& other) const {
+		return preset == other.preset && clearBass == other.clearBass && bands == other.bands;
+	}
+};
+
 class Headphones {
 public:
 	Headphones(BluetoothWrapper& conn);
@@ -50,6 +61,10 @@ public:
 	std::vector<BluetoothDevice> getDevices();
 	std::pair<int, int> getConnectedDevices();
 	void setMultiPointConnection(int connectionId, int newDevice, int oldDevice);
+
+	// Equalizer
+	void setEqualizer(const EqualizerConfig& cfg);
+	EqualizerConfig getEqualizer();
 
 	// Capabilities reported by the device. 0 until the reply arrives.
 	unsigned int getCapabilities();
@@ -93,6 +108,8 @@ private:
 	// index 0 is the empty "no device" slot; _dev1/_dev2 index into _savedDevices
 	std::vector<BluetoothDevice> _savedDevices = { BluetoothDevice{"", ""} };
 	Property<int> _dev1 = { 0, 0 }, _dev2 = { 0, 0 };
+
+	Property<EqualizerConfig> _eq;
 
 	std::mutex _propertyMtx;
 

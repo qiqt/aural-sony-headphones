@@ -145,6 +145,18 @@ bool Headphones::supportsFeature(DEVICE_CAPABILITIES cap)
 	return this->_capabilities == 0 || (this->_capabilities & cap);
 }
 
+void Headphones::setEqualizer(const EqualizerConfig& cfg)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_eq.desired = cfg;
+}
+
+EqualizerConfig Headphones::getEqualizer()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_eq.current;
+}
+
 bool Headphones::isChanged()
 {
 	return !(this->_ambientSoundControl.isFulfilled() &&
@@ -156,7 +168,8 @@ bool Headphones::isChanged()
 		this->_speakToChat.isFulfilled() &&
 		this->_s2cOptions.isFulfilled() &&
 		this->_dev1.isFulfilled() &&
-		this->_dev2.isFulfilled());
+		this->_dev2.isFulfilled() &&
+		this->_eq.isFulfilled());
 }
 
 void Headphones::setChanges()
@@ -188,6 +201,19 @@ void Headphones::setChanges()
 
 		std::lock_guard guard(this->_propertyMtx);
 		this->_s2cOptions.fulfill();
+	}
+
+	if (!(this->_eq.isFulfilled()))
+	{
+		auto cfg = this->_eq.desired;
+		// MANUAL means "apply these band sliders"; every other id just selects the preset.
+		if (cfg.preset == static_cast<int>(EQ_PRESET::MANUAL))
+			this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
+		else
+			this->_conn.sendCommand(CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(cfg.preset)));
+
+		std::lock_guard guard(this->_propertyMtx);
+		this->_eq.fulfill();
 	}
 
     {

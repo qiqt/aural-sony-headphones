@@ -48,5 +48,10 @@ namespace CommandSerializer
 	Buffer serializeXM4SpeakToChat(S2C_TOGGLE s2cState);
 	Buffer serializeXM4_S2C_Options(unsigned char sensitivity, unsigned char voice, unsigned char offTime);
 	Buffer serializeMultiPointCommand(MULTI_POINT_COMMANDS cmd, std::string macAddr);
+
+	// v1 equalizer (EqEbb). Either select a preset, or push custom band levels (clear bass + 5
+	// bands), each in the range -10..+10 (sent biased by +10).
+	Buffer serializeEqualizerPreset(unsigned char presetCode);
+	Buffer serializeEqualizerCustomBands(int clearBass, const std::vector<int>& bands);
 }
 

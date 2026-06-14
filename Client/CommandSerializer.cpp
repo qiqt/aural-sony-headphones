@@ -85,5 +85,28 @@ namespace CommandSerializer
         return payload;
     }
 
+	Buffer serializeEqualizerPreset(unsigned char presetCode)
+	{
+		Buffer ret;
+		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::EQUALIZER_SET));
+		ret.push_back(0x01);        // EqEbb inquired type: preset EQ
+		ret.push_back(presetCode);
+		ret.push_back(0x00);
+		return ret;
+	}
+
+	Buffer serializeEqualizerCustomBands(int clearBass, const std::vector<int>& bands)
+	{
+		Buffer ret;
+		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::EQUALIZER_SET));
+		ret.push_back(0x01);        // EqEbb inquired type: preset EQ
+		ret.push_back(0xff);        // custom/manual preset marker
+		ret.push_back(static_cast<unsigned char>(1 + bands.size())); // clear bass + N bands
+		ret.push_back(static_cast<unsigned char>(clearBass + 10));   // bias -10..+10 -> 0..20
+		for (int band : bands)
+			ret.push_back(static_cast<unsigned char>(band + 10));
+		return ret;
+	}
+
 }
 

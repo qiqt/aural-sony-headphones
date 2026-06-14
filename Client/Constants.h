@@ -141,7 +141,30 @@ enum class COMMAND_TYPE : signed char
 	CAPABILITY_QUERY = (signed char)0x06,
 	MULTI_POINT_DEVICES_QUERY = (signed char)0x36,
 	S2C_QUERY = (signed char)0xf6,
-	S2C_OPTIONS_QUERY = (signed char)0xfa
+	S2C_OPTIONS_QUERY = (signed char)0xfa,
+
+	// v1 equalizer (EqEbb). Verified against the MDR packet tables and Gadgetbridge.
+	EQUALIZER_GET = (signed char)0x56,
+	EQUALIZER_RET = (signed char)0x57,
+	EQUALIZER_SET = (signed char)0x58,
+	EQUALIZER_NOTIFY = (signed char)0x59
+};
+
+// v1 equalizer preset ids. MANUAL/CUSTOM_* recall the user's saved band values.
+enum class EQ_PRESET : signed char
+{
+	OFF = 0x00,
+	BRIGHT = 0x10,
+	EXCITED = 0x11,
+	MELLOW = 0x12,
+	RELAXED = 0x13,
+	VOCAL = 0x14,
+	TREBLE_BOOST = 0x15,
+	BASS_BOOST = 0x16,
+	SPEECH = 0x17,
+	MANUAL = (signed char)0xa0,
+	CUSTOM_1 = (signed char)0xa1,
+	CUSTOM_2 = (signed char)0xa2
 };
 
 // v1 (legacy) battery, part of the POWER function. GET asks for the level; the headphones
