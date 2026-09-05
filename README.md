@@ -2,6 +2,6 @@
 
 Windows controls for Sony Bluetooth headphones.
 
-This snapshot contains the protocol engine. Build it with CMake from `Client/`.
+Build the Qt Quick app in `Client/qt`.
 
 Inspired by [SonyHeadphonesClient](https://github.com/Plutoberth/SonyHeadphonesClient).
