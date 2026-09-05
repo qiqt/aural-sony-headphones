@@ -358,7 +358,16 @@ void Headphones::queryState()
 	try { this->_conn.sendCommand({ 0x00, 0x00 }); } catch (const RecoverableException&) {} // INIT_REQUEST
 	try { this->requestBattery(); }                  catch (const RecoverableException&) {}
 	try { this->queryDeviceCapabilities(); }         catch (const RecoverableException&) {}
+	try { this->queryNcAsmState(); }                 catch (const RecoverableException&) {}
 	try { this->queryDevices(); }                    catch (const RecoverableException&) {}
+}
+
+void Headphones::queryNcAsmState()
+{
+	this->_conn.sendCommand({
+		static_cast<char>(COMMAND_TYPE::NCASM_GET_PARAM),
+		static_cast<char>(NC_ASM_INQUIRED_TYPE::NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE)
+	});
 }
 
 void Headphones::queryDeviceCapabilities()
@@ -415,6 +424,27 @@ void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 			std::lock_guard guard(this->_propertyMtx);
 			this->_batteryLevel = static_cast<unsigned char>(bytes[2]);
 			this->_batteryCharging = bytes[3] != 0;
+		}
+		break;
+	}
+
+	case static_cast<unsigned char>(COMMAND_TYPE::NCASM_RET_PARAM):
+	case static_cast<unsigned char>(COMMAND_TYPE::NCASM_NTFY_PARAM):
+	{
+		// Same 8-byte layout as SET: [cmd][inquiredType][effect][ncSettingType][dualSingle]
+		// [asmSettingType][asmId][asmLevel]. Sent as RET on our GET and as NOTIFY when the
+		// state changes on the device itself (e.g. the physical ANC button).
+		if (bytes.size() >= 8 &&
+			bytes[1] == static_cast<char>(NC_ASM_INQUIRED_TYPE::NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE))
+		{
+			bool effectOn = bytes[2] != static_cast<char>(NC_ASM_EFFECT::OFF);
+			bool voice = bytes[6] == static_cast<char>(ASM_ID::VOICE);
+			int level = static_cast<unsigned char>(bytes[7]);
+
+			std::lock_guard guard(this->_propertyMtx);
+			this->_ambientSoundControl.setState(effectOn);
+			this->_focusOnVoice.setState(voice);
+			this->_asmLevel.setState(level);
 		}
 		break;
 	}

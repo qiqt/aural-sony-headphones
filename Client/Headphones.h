@@ -97,6 +97,7 @@ public:
 	int getBatteryLevel();      // 0-100, or -1 if unknown
 	bool isBatteryCharging();
 private:
+	void queryNcAsmState();
 	void queryDeviceCapabilities();
 	void queryDevices();
 	void _connectDevice(int deviceIdx);
@@ -110,7 +111,9 @@ private:
 	Property<bool> _ambientSoundControl = { 0 };
 	Property<bool> _focusOnVoice = { 0 };
 	Property<int> _asmLevel = { 0 };
-	Property<SOUND_POSITION_PRESET> _surroundPosition = { SOUND_POSITION_PRESET::OUT_OF_RANGE, SOUND_POSITION_PRESET::OFF };
+	// Starts fulfilled (OFF/OFF) so connecting doesn't push a spurious "position off" write;
+	// the actual device state is unknown and we only send when the user changes something.
+	Property<SOUND_POSITION_PRESET> _surroundPosition = { SOUND_POSITION_PRESET::OFF, SOUND_POSITION_PRESET::OFF };
 	Property<int> _vptType = { 0 };
 
 	Property<OPTIMIZER_STATE> _optimizerState = { OPTIMIZER_STATE::IDLE, OPTIMIZER_STATE::IDLE };

@@ -125,7 +125,13 @@ enum class NC_DUAL_SINGLE_VALUE : signed char
 enum class COMMAND_TYPE : signed char
 {
 	VPT_SET_PARAM = 72,
-	NCASM_SET_PARAM = 104,
+
+	// v1 NC/ASM function block follows the usual GET/RET/SET/NOTIFY spacing (like EqEbb 0x56-0x59).
+	// RET and NOTIFY carry the same 8-byte payload layout as SET (see serializeNcAndAsmSetting).
+	NCASM_GET_PARAM = 102,     // 0x66
+	NCASM_RET_PARAM = 103,     // 0x67
+	NCASM_SET_PARAM = 104,     // 0x68
+	NCASM_NTFY_PARAM = 105,    // 0x69
 
 	// v1 feature command IDs (proven on XM4, from PR #103)
 	XM4_OPTIMIZER_PARAM = (signed char)0x84,
