@@ -4,6 +4,11 @@ import Aural
 
 Item {
     id: root
+
+    // Navigation is Main's job: the dashboard asks to go somewhere instead of reaching into
+    // another component's context and assigning its screen index directly.
+    signal navigate(int screen)
+
     readonly property var presetNames: ["Off","Bright","Excited","Mellow","Relaxed","Vocal","Treble Boost","Bass Boost","Speech","Manual","Custom 1","Custom 2"]
     readonly property var modeNames: ["Noise Cancelling", "Ambient Sound", "Off"]
 
@@ -25,7 +30,10 @@ Item {
             rowSpacing: Theme.lg
 
             // --- Current Sound Mode ---
+            // Every card mirrors the controller's availability gates (SON-11): the dashboard
+            // is a summary of the pages, so it must not offer what they are hiding.
             Rectangle {
+                visible: Hp.ambientAvailable
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
@@ -60,6 +68,7 @@ Item {
 
             // --- Equalizer summary ---
             Rectangle {
+                visible: Hp.equalizerAvailable
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
@@ -80,12 +89,13 @@ Item {
                         Layout.fillWidth: true
                         Layout.preferredHeight: 72
                     }
-                    AuralButton { Layout.fillWidth: true; text: "Open Equalizer"; iconName: "tune"; onClicked: win.currentScreen = 2 }
+                    AuralButton { Layout.fillWidth: true; text: "Open Equalizer"; iconName: "tune"; onClicked: root.navigate(2) }
                 }
             }
 
             // --- Quick features ---
             Rectangle {
+                visible: Hp.systemSettingsAvailable || Hp.supportsSpeakToChat
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
@@ -99,6 +109,7 @@ Item {
                     Text { text: "Manage device smart features."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
 
                     Rectangle {
+                        visible: Hp.systemSettingsAvailable
                         Layout.fillWidth: true
                         radius: Theme.radiusMd; color: Theme.surfaceContainerLow
                         implicitHeight: dseeRow.implicitHeight + 2 * Theme.sm
@@ -114,6 +125,7 @@ Item {
                         }
                     }
                     Rectangle {
+                        visible: Hp.systemSettingsAvailable
                         Layout.fillWidth: true
                         radius: Theme.radiusMd; color: Theme.surfaceContainerLow
                         implicitHeight: vgRow.implicitHeight + 2 * Theme.sm
@@ -153,7 +165,7 @@ Item {
                             color: Theme.primary
                             font.pixelSize: Theme.labelMd
                             font.weight: Font.DemiBold
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: win.currentScreen = 5 }
+                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: root.navigate(5) }
                         }
                     }
 

@@ -3,12 +3,12 @@
 #include <algorithm>
 #include <chrono>
 
-// How long a sender waits for the headphones to ACK a command before giving up.
+// Default time a sender waits for the headphones to ACK a command before giving up.
 // Without this a missing ACK would hang the sending thread forever.
-constexpr auto ACK_TIMEOUT = std::chrono::seconds(2);
+constexpr auto DEFAULT_ACK_TIMEOUT = std::chrono::milliseconds(2000);
 
 BluetoothWrapper::BluetoothWrapper(std::unique_ptr<IBluetoothConnector> connector)
-    : _connector(std::move(connector))
+    : _connector(std::move(connector)), _ackTimeout(DEFAULT_ACK_TIMEOUT)
 {
     if (!_connector) throw std::invalid_argument("Bluetooth connector is required");
 }
@@ -17,21 +17,66 @@ BluetoothWrapper::BluetoothWrapper(std::unique_ptr<IBluetoothConnector> connecto
 
 
 
+void BluetoothWrapper::setAckTimeout(std::chrono::milliseconds timeout) noexcept
+{
+	std::lock_guard guard(this->_ackMtx);
+	this->_ackTimeout = timeout;
+}
+
+std::chrono::milliseconds BluetoothWrapper::ackTimeout() const noexcept
+{
+	return this->_ackTimeout;
+}
+
 int BluetoothWrapper::sendCommand(const std::vector<char>& bytes, DATA_TYPE dataType)
 {
 	// Serialize whole commands so two senders can't share a seqNumber. The Listener
 	// never takes _commandMtx, so it can still ACK incoming frames while we wait below.
 	std::lock_guard commandGuard(this->_commandMtx);
 
+	const bool expectsAck = (dataType != DATA_TYPE::ACK);
+	const unsigned long long session = this->_session.load();
+	unsigned long long commandId = 0;
+
+	// A previous command timed out, so an incoming ACK can no longer be attributed to
+	// anything (see the header). Refuse to put another frame on a link where "acknowledged"
+	// has stopped meaning anything, and ask the caller to tear the session down.
+	// ACKs we send for received frames are unaffected: they expect no reply.
+	if (expectsAck && this->_desynchronized.load())
+	{
+		throw RecoverableException(
+			"The link is out of sync after an unacknowledged command; reconnect to continue", true);
+	}
+
+	if (expectsAck)
+	{
+		std::lock_guard ackGuard(this->_ackMtx);
+		commandId = this->_nextCommandId++;
+		this->_expectedAckSeq = this->_seqNumber.load() ^ 0x01;
+		// From here until the wait ends, an incoming ACK belongs to this command.
+		this->_pendingCommandId = commandId;
+	}
+
 	int bytesSent;
+	try
 	{
 		std::lock_guard sendGuard(this->_sendMtx);
 		auto data = CommandSerializer::packageDataForBt(bytes, dataType, this->_seqNumber.load());
 		bytesSent = this->_connector->send(data.data(), data.size());
 	}
+	catch (...)
+	{
+		if (expectsAck)
+		{
+			std::lock_guard ackGuard(this->_ackMtx);
+			if (this->_pendingCommandId == commandId)
+				this->_pendingCommandId = 0;
+		}
+		throw;
+	}
 
-	if (dataType != DATA_TYPE::ACK)
-		this->_waitForAck();
+	if (expectsAck)
+		this->_waitForAck(commandId, session);
 
 	return bytesSent;
 }
@@ -43,26 +88,58 @@ void BluetoothWrapper::sendAck(unsigned char seqNumber)
 	this->_connector->send(data.data(), data.size());
 }
 
-void BluetoothWrapper::_waitForAck()
+void BluetoothWrapper::_waitForAck(unsigned long long commandId, unsigned long long session)
 {
 	std::unique_lock<std::mutex> guard(this->_ackMtx);
-	bool gotAck = this->_ackCv.wait_for(guard, ACK_TIMEOUT,
-		[this]() { return this->_ackBuffer > 0 || this->_aborted.load(); });
 
-	if (this->_aborted.load())
+	const bool gotAck = this->_ackCv.wait_for(guard, this->_ackTimeout, [this, commandId, session]() {
+		return this->_ackedCommandId == commandId
+			|| this->_aborted.load()
+			|| this->_session.load() != session;
+	});
+
+	const bool acked = (this->_ackedCommandId == commandId);
+	// Nothing is in flight any more: a later ACK for this command must not be banked for
+	// whichever command runs next.
+	if (this->_pendingCommandId == commandId)
+		this->_pendingCommandId = 0;
+
+	if (acked)
+		return;
+
+	if (this->_session.load() != session || this->_aborted.load())
 		throw RecoverableException("Disconnected while waiting for an acknowledgement", true);
-	if (!gotAck)
-		throw RecoverableException("Timed out waiting for the headphones to acknowledge a command", false);
 
-	this->_ackBuffer--;
+	// wait_for returning true without a matching ack can only mean a spurious wakeup path;
+	// treat it the same as a timeout.
+	(void)gotAck;
+
+	// The command may still be in flight, and its ACK - if it ever arrives - is
+	// indistinguishable from the next command's. Latch the ambiguity so no later command can
+	// be released by it, and report the session as unusable rather than merely "this one
+	// command failed".
+	this->_desynchronized.store(true);
+	throw RecoverableException(
+		"Timed out waiting for the headphones to acknowledge a command", true);
 }
 
 void BluetoothWrapper::postAck(unsigned char ackSeqNumber)
 {
-	this->_seqNumber.store(ackSeqNumber);
 	{
 		std::lock_guard guard(this->_ackMtx);
-		this->_ackBuffer++;
+		if (this->_pendingCommandId == 0 || this->_desynchronized.load()
+			|| ackSeqNumber != this->_expectedAckSeq)
+		{
+			// Either nobody is waiting (the command timed out, or the device sent an extra
+			// ACK), or a previous timeout means this ACK could belong to either command and
+			// we cannot tell which. Dropping it is the point: banking it would let it
+			// "acknowledge" whichever command runs next.
+			this->_droppedAcks.fetch_add(1);
+			return;
+		}
+		this->_seqNumber.store(ackSeqNumber);
+		this->_ackedCommandId = this->_pendingCommandId;
+		this->_pendingCommandId = 0;
 	}
 	this->_ackCv.notify_all();
 }
@@ -78,10 +155,16 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 	this->_protocol = protocol;
 	this->_seqNumber.store(0);
 	this->_aborted.store(false);
+	// A fresh link is synchronized again: this is the only thing that clears the latch.
+	this->_desynchronized.store(false);
 	{
 		std::lock_guard ackGuard(this->_ackMtx);
-		this->_ackBuffer = 0;
+		this->_pendingCommandId = 0;
+		this->_ackedCommandId = 0;
+		// New session: anything still waiting on the old one must not be satisfied by it.
+		this->_session.fetch_add(1);
 	}
+	this->_ackCv.notify_all();
 	this->_readBuffer.clear();
 	this->_connector->connect(addr, protocol);
 }
@@ -89,11 +172,20 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 void BluetoothWrapper::disconnect() noexcept
 {
 	// Release any sender currently blocked in _waitForAck so teardown doesn't wait out the timeout.
-	this->_aborted.store(true);
-	this->_ackCv.notify_all();
+	this->notifyLinkLost();
 	this->_seqNumber.store(0);
 	// Closing the socket unblocks the Listener's pending recv so it can exit.
 	this->_connector->disconnect();
+}
+
+void BluetoothWrapper::notifyLinkLost() noexcept
+{
+	this->_aborted.store(true);
+	{
+		std::lock_guard guard(this->_ackMtx);
+		this->_pendingCommandId = 0;
+	}
+	this->_ackCv.notify_all();
 }
 
 std::vector<BluetoothDevice> BluetoothWrapper::getConnectedDevices()
@@ -131,7 +223,10 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 		auto numRecvd = this->_connector->recv(buf, sizeof(buf));
 		if (numRecvd <= 0)
 		{
-			throw RecoverableException("Connection closed by the headphones", true);
+			// The far end closed the RFCOMM channel. Wake any waiting sender: nothing else
+			// is going to arrive on this link.
+			this->notifyLinkLost();
+			throw ConnectionClosedException("Connection closed by the headphones");
 		}
 		this->_readBuffer.insert(this->_readBuffer.end(), buf, buf + numRecvd);
 	}
@@ -139,5 +234,16 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 
 CommandSerializer::Message BluetoothWrapper::readMessage()
 {
-	return this->_readFrame();
+	try
+	{
+		return this->_readFrame();
+	}
+	catch (...)
+	{
+		// A dead transport releases waiting senders immediately. A corrupt frame does not:
+		// the connector is still connected, so only this frame is lost.
+		if (!this->_connector->isConnected())
+			this->notifyLinkLost();
+		throw;
+	}
 }

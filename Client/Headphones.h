@@ -3,16 +3,68 @@
 #include "BluetoothWrapper.h"
 #include "Constants.h"
 
+#include <memory>
 #include <mutex>
 
+// What we actually know about one device setting.
+//
+//   Unknown       we have never established the device's value (and never pushed one)
+//   Requested     the user asked for a value that has not reached the transport yet
+//   Acknowledged  the headphones ACKed the frame that carried the value (transport level only)
+//   Confirmed     the headphones reported this value in a RET/NOTIFY reply
+//   Failed        the send did not complete (ACK timeout, socket error)
+//
+// Acknowledged is deliberately distinct from Confirmed: an ACK says "frame received", not
+// "setting applied". Only a read-back reply may promote a setting to Confirmed.
+enum class SettingStatus
+{
+	Unknown,
+	Requested,
+	Acknowledged,
+	Confirmed,
+	Failed
+};
+
+// One device setting: what the device is believed to hold, what the UI wants, and enough
+// bookkeeping to tell "already sent" from "changed again while we were sending".
+//
+// revision counts intent changes; sentRevision records the revision that was last handed to
+// the transport. isFulfilled() is revision == sentRevision, so an ACK for revision N can
+// never mark revision N+1 as sent - the stale-fulfillment bug the old value comparison had.
+//
+// Not thread-safe on its own: Headphones owns the mutex that guards every Property.
 template <class T>
 struct Property {
-	T current;
-	T desired;
+	T current{};
+	T desired{};
+	SettingStatus status = SettingStatus::Unknown;
+	unsigned long long revision = 0;
+	unsigned long long sentRevision = 0;
 
-	void fulfill();
-	bool isFulfilled();
-	void setState(T val);   // sync both current and desired from a device reply
+	// Ask for a value. Re-selecting the value we already pushed is a no-op, but re-selecting
+	// the local default while the device value is still Unknown does queue a command:
+	// otherwise "set it to the value it appears to have" would silently send nothing.
+	void setDesired(const T& val);
+
+	// True when there is nothing left to hand to the transport.
+	bool isFulfilled() const { return this->revision == this->sentRevision; }
+
+	// The transport accepted (ACKed) the frame carrying revision rev. Never downgrades a
+	// value the device has already reported back (a read-back can beat its own ACK).
+	void markSent(unsigned long long rev, const T& sent);
+	// The frame carrying revision rev never completed. Like markSent, it does not overwrite
+	// a device read-back that already confirmed the same value.
+	void markFailed(unsigned long long rev);
+	// Like markSent, but for values the device owns (multipoint): our desired is only a
+	// request, so it reverts and we wait for the device's own list reply.
+	void markRequestSent(unsigned long long rev);
+
+	// A device reply told us the real value. Only promotes to Confirmed when the reply
+	// actually answers the latest intent - a reply describing the value the device still
+	// holds must not hide a newer request that has not been sent yet.
+	void setState(const T& val);
+	// Forget everything (new session).
+	void reset(const T& val);
 };
 
 // v1 equalizer state: a preset plus the manual band levels (clear bass + 5 bands), each -10..+10.
@@ -26,6 +78,32 @@ struct EqualizerConfig {
 	}
 };
 
+// A read-only copy of every setting's status, taken under one lock so the UI never sees a
+// half-updated picture.
+struct SettingsStatus {
+	SettingStatus ambient = SettingStatus::Unknown;
+	SettingStatus equalizer = SettingStatus::Unknown;
+	SettingStatus spatial = SettingStatus::Unknown;
+	SettingStatus speakToChat = SettingStatus::Unknown;
+	SettingStatus dsee = SettingStatus::Unknown;
+	SettingStatus voiceGuidance = SettingStatus::Unknown;
+	SettingStatus autoPowerOff = SettingStatus::Unknown;
+	SettingStatus optimizer = SettingStatus::Unknown;
+	SettingStatus multipoint = SettingStatus::Unknown;
+};
+
+// Whether the device said it supports a feature. Unknown is not "supported": it means the
+// capability reply has not arrived (or the device never answers it).
+enum class CapabilityState
+{
+	Unknown,
+	Supported,
+	Unsupported
+};
+
+// Thread-safety: every accessor takes _propertyMtx. setChanges() snapshots under the lock,
+// releases it while the frame is on the wire, then re-takes it to record the result - the
+// Listener thread must be able to apply incoming replies while a send is in flight.
 class Headphones {
 public:
 	Headphones(BluetoothWrapper& conn);
@@ -78,10 +156,18 @@ public:
 	void setAutoPowerOff(AUTO_POWER_OFF val);
 	AUTO_POWER_OFF getAutoPowerOff();
 
-	// Capabilities reported by the device. 0 until the reply arrives.
+	// Capabilities reported by the device.
 	unsigned int getCapabilities();
-	// True if a feature is supported, or if capabilities haven't been read yet.
+	bool capabilitiesKnown();
+	// Unknown / Supported / Unsupported - the honest answer.
+	CapabilityState featureState(DEVICE_CAPABILITIES cap);
+	// Convenience for UI gating: show a control unless the device said it is unsupported.
+	// Unknown counts as "show it", because plenty of v1 devices never answer the capability
+	// query at all. Use featureState() when the distinction matters.
 	bool supportsFeature(DEVICE_CAPABILITIES cap);
+
+	// Per-setting status for the UI (see SettingStatus).
+	SettingsStatus getStatuses();
 
 	bool isChanged();
 	void setChanges();
@@ -96,6 +182,11 @@ public:
 	void requestBattery();      // sends the GET; the reply updates state asynchronously
 	int getBatteryLevel();      // 0-100, or -1 if unknown
 	bool isBatteryCharging();
+
+	// Drop every value back to Unknown. Called when a session ends so a reconnect cannot
+	// present the previous device's settings as this device's settings.
+	void resetState();
+
 private:
 	void queryNcAsmState();
 	void queryDeviceCapabilities();
@@ -103,33 +194,42 @@ private:
 	void _connectDevice(int deviceIdx);
 	void _disconnectDevice(int deviceIdx);
 
+	// Snapshot prop under the lock, send without it, then record the outcome against the
+	// revision that was actually sent.
+	template <class T, class SendFn>
+	void _sendPending(Property<T>& prop, SendFn&& send);
+
+	// Groups that share one frame, so all their properties are snapshotted together.
+	void _pushNcAsm();
+	void _pushSpatial();
+	void _pushMultipoint();
+
 	int _batteryLevel = -1;
 	bool _batteryCharging = false;
 
 	unsigned int _capabilities = 0;
+	bool _capabilitiesKnown = false;
 
-	Property<bool> _ambientSoundControl = { 0 };
-	Property<bool> _focusOnVoice = { 0 };
-	Property<int> _asmLevel = { 0 };
-	// Starts fulfilled (OFF/OFF) so connecting doesn't push a spurious "position off" write;
-	// the actual device state is unknown and we only send when the user changes something.
-	Property<SOUND_POSITION_PRESET> _surroundPosition = { SOUND_POSITION_PRESET::OFF, SOUND_POSITION_PRESET::OFF };
-	Property<int> _vptType = { 0 };
+	Property<bool> _ambientSoundControl;
+	Property<bool> _focusOnVoice;
+	Property<int> _asmLevel;
+	Property<SOUND_POSITION_PRESET> _surroundPosition{ SOUND_POSITION_PRESET::OFF, SOUND_POSITION_PRESET::OFF };
+	Property<int> _vptType;
 
-	Property<OPTIMIZER_STATE> _optimizerState = { OPTIMIZER_STATE::IDLE, OPTIMIZER_STATE::IDLE };
-	Property<S2C_TOGGLE> _speakToChat = { S2C_TOGGLE::INACTIVE, S2C_TOGGLE::INACTIVE };
-	Property<unsigned int> _s2cOptions = { 0 };
+	Property<OPTIMIZER_STATE> _optimizerState{ OPTIMIZER_STATE::IDLE, OPTIMIZER_STATE::IDLE };
+	Property<S2C_TOGGLE> _speakToChat{ S2C_TOGGLE::INACTIVE, S2C_TOGGLE::INACTIVE };
+	Property<unsigned int> _s2cOptions;
 
 	// index 0 is the empty "no device" slot; _dev1/_dev2 index into _savedDevices
 	std::vector<BluetoothDevice> _savedDevices = { BluetoothDevice{"", ""} };
-	Property<int> _dev1 = { 0, 0 }, _dev2 = { 0, 0 };
+	Property<int> _dev1, _dev2;
 
 	Property<EqualizerConfig> _eq;
 
-	// Write-only system settings (no read-back, to avoid clobbering the device on connect).
-	Property<bool> _audioUpsampling = { false, false };
-	Property<bool> _voiceGuidance = { false, false };
-	Property<AUTO_POWER_OFF> _autoPowerOff = { AUTO_POWER_OFF::OFF, AUTO_POWER_OFF::OFF };
+	// Write-only system settings: no read-back exists, so they stay Acknowledged at best.
+	Property<bool> _audioUpsampling;
+	Property<bool> _voiceGuidance;
+	Property<AUTO_POWER_OFF> _autoPowerOff{ AUTO_POWER_OFF::OFF, AUTO_POWER_OFF::OFF };
 
 	std::mutex _propertyMtx;
 
@@ -137,20 +237,126 @@ private:
 };
 
 template<class T>
-inline void Property<T>::fulfill()
+inline void Property<T>::setDesired(const T& val)
 {
-	this->current = this->desired;
+	const bool pending = !this->isFulfilled();
+	const bool sameIntent = (val == this->desired);
+	const bool deviceValueEstablished =
+		this->status == SettingStatus::Acknowledged || this->status == SettingStatus::Confirmed;
+
+	// Nothing to do only when the same value is already queued, or has already been pushed to
+	// a device whose value we have actually established.
+	if (sameIntent && (pending || deviceValueEstablished))
+		return;
+
+	this->desired = val;
+	++this->revision;
+	this->status = SettingStatus::Requested;
 }
 
 template<class T>
-inline bool Property<T>::isFulfilled()
+inline void Property<T>::markSent(unsigned long long rev, const T& sent)
 {
-	return this->desired == this->current;
+	if (rev > this->sentRevision)
+		this->sentRevision = rev;
+
+	// A read-back can beat its own ACK: the device may report the new value before the
+	// transport-level acknowledgement of the frame that carried it lands. "The device told us
+	// it holds this" is strictly stronger evidence than "the device received the frame", so
+	// an ACK never walks a matching Confirmed back down to Acknowledged.
+	const bool alreadyConfirmed =
+		this->status == SettingStatus::Confirmed && this->current == sent;
+
+	this->current = sent;
+	// Only claim "sent" when nothing newer has been requested in the meantime.
+	if (rev == this->revision && !alreadyConfirmed)
+		this->status = SettingStatus::Acknowledged;
 }
 
 template<class T>
-inline void Property<T>::setState(T val)
+inline void Property<T>::markFailed(unsigned long long rev)
+{
+	// Stop retrying this revision; a fresh user action bumps revision and tries again.
+	if (rev > this->sentRevision)
+		this->sentRevision = rev;
+
+	// Same rule as markSent: if the device already reported back the value we were sending,
+	// it applied the change and only the acknowledgement went missing. Reporting that as
+	// Failed would be as untrue as reporting an unsent change as Confirmed.
+	const bool deviceAlreadyConfirmedIt =
+		this->status == SettingStatus::Confirmed && this->current == this->desired;
+
+	if (rev == this->revision && !deviceAlreadyConfirmedIt)
+		this->status = SettingStatus::Failed;
+}
+
+template<class T>
+inline void Property<T>::markRequestSent(unsigned long long rev)
+{
+	if (rev > this->sentRevision)
+		this->sentRevision = rev;
+	if (rev == this->revision)
+	{
+		this->desired = this->current;
+		this->status = SettingStatus::Requested;
+	}
+}
+
+template<class T>
+inline void Property<T>::setState(const T& val)
+{
+	const bool answersLatestIntent = this->isFulfilled() || val == this->desired;
+
+	this->current = val;
+
+	// Don't discard a change the user has queued but we haven't sent yet.
+	if (this->isFulfilled())
+		this->desired = val;
+
+	// Confirmed means "the device holds what the app is showing". While a newer request is
+	// still outstanding, a reply describing the value the device *currently* holds says
+	// nothing about that request - claiming Confirmed there would show a settled setting the
+	// user is still waiting on. The pending Requested status stands until the request itself
+	// is answered. (val == desired is the read-back-beats-its-own-ACK case: the reply does
+	// answer the outstanding intent, even though the ACK has not landed yet.)
+	if (answersLatestIntent)
+		this->status = SettingStatus::Confirmed;
+}
+
+template<class T>
+inline void Property<T>::reset(const T& val)
 {
 	this->current = val;
 	this->desired = val;
+	this->status = SettingStatus::Unknown;
+	this->revision = 0;
+	this->sentRevision = 0;
+}
+
+template<class T, class SendFn>
+inline void Headphones::_sendPending(Property<T>& prop, SendFn&& send)
+{
+	T value;
+	unsigned long long rev;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (prop.isFulfilled())
+			return;
+		value = prop.desired;
+		rev = prop.revision;
+	}
+
+	try
+	{
+		send(value);
+	}
+	catch (...)
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		prop.markFailed(rev);
+		throw;
+	}
+
+	std::lock_guard guard(this->_propertyMtx);
+	prop.markSent(rev, value);
 }

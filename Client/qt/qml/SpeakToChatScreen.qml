@@ -14,6 +14,11 @@ Item {
             spacing: 4
             Text { text: "Speak-to-Chat"; color: Theme.textPrimary; font.family: Theme.displayFont; font.pixelSize: Theme.display; font.weight: Font.Bold }
             Text { text: "Automatically pause audio and let ambient sound in when you start talking."; color: Theme.textSecondary; font.pixelSize: Theme.bodyLg }
+            StatusChip {
+                Layout.topMargin: Theme.xs
+                active: Hp.supportsSpeakToChat
+                status: Hp.settingStatus.speakToChat
+            }
         }
 
         // master toggle
@@ -25,7 +30,7 @@ Item {
                 id: masterRow
                 anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.md
                 Rectangle {
-                    width: 40; height: 40; radius: Theme.radius
+                    implicitWidth: 40; implicitHeight: 40; radius: Theme.radius
                     color: Theme.primaryContainer
                     Icon { anchors.centerIn: parent; name: "record_voice_over"; size: 22; color: Theme.primaryContainerText }
                 }

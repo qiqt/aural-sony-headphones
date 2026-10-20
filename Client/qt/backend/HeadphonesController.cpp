@@ -2,14 +2,12 @@
 // first. WIN32_LEAN_AND_MEAN (set in CMake) also keeps windows.h from pulling winsock 1.
 #ifdef _WIN32
 #include "windows/WindowsBluetoothConnector.h"
-#include <dwmapi.h>
 #endif
 
 #include "HeadphonesController.h"
 #include "Exceptions.h"
 
 #include <QDebug>
-#include <QWindow>
 
 #include <algorithm>
 
@@ -20,18 +18,48 @@ std::unique_ptr<IBluetoothConnector> makeConnector()
 #ifdef _WIN32
     return std::make_unique<WindowsBluetoothConnector>();
 #else
+    // Aural is Windows-only for now. The engine's Linux/macOS connectors belong to the
+    // original client and are not wired up here; returning null would crash on first use.
     return nullptr;
 #endif
 }
 
-QString friendlyModel(const std::string& name)
+// Never invent a model. A Bluetooth name is user-editable, so we only show a marketing name
+// when the name actually matches a product code (see identifyDevice).
+QString displayModel(const std::string& name)
 {
-    auto has = [&](const char* s) { return name.find(s) != std::string::npos; };
-    if (has("XM6")) return "WH-1000XM6";
-    if (has("XM5")) return "WH-1000XM5";
-    if (has("XM4")) return "WH-1000XM4";
-    if (has("XM3")) return "WH-1000XM3";
+    const DeviceIdentity identity = identifyDevice(name);
+    if (identity.recognised)
+        return QString::fromLatin1(identity.marketingName);
     return QString::fromStdString(name);
+}
+
+QString statusName(SettingStatus status)
+{
+    switch (status)
+    {
+    case SettingStatus::Requested:    return QStringLiteral("requested");
+    case SettingStatus::Acknowledged: return QStringLiteral("acknowledged");
+    case SettingStatus::Confirmed:    return QStringLiteral("confirmed");
+    case SettingStatus::Failed:       return QStringLiteral("failed");
+    case SettingStatus::Unknown:      break;
+    }
+    return QStringLiteral("unknown");
+}
+
+QVariantMap statusMap(const SettingsStatus& s)
+{
+    QVariantMap m;
+    m["ambient"] = statusName(s.ambient);
+    m["equalizer"] = statusName(s.equalizer);
+    m["spatial"] = statusName(s.spatial);
+    m["speakToChat"] = statusName(s.speakToChat);
+    m["dsee"] = statusName(s.dsee);
+    m["voiceGuidance"] = statusName(s.voiceGuidance);
+    m["autoPowerOff"] = statusName(s.autoPowerOff);
+    m["optimizer"] = statusName(s.optimizer);
+    m["multipoint"] = statusName(s.multipoint);
+    return m;
 }
 
 // UI preset index -> engine EQ_PRESET. Indices 9..11 (Manual/Custom1/Custom2) use the bands.
@@ -54,18 +82,34 @@ QVariantMap mpEntry(const QString& name, const QString& status, int slot)
 } // namespace
 
 HeadphonesController::HeadphonesController(QObject* parent)
+    : HeadphonesController(makeConnector(), parent)
+{
+}
+
+HeadphonesController::HeadphonesController(std::unique_ptr<IBluetoothConnector> connector,
+                                           QObject* parent)
     : QObject(parent)
-    , _bt(makeConnector())
+    , _bt(std::move(connector))
     , _headphones(_bt)
 {
+    init();
+}
+
+void HeadphonesController::init()
+{
     _clock.start();
+    _settingStatus = statusMap(SettingsStatus{});
 
     _demo = qEnvironmentVariableIsSet("AURAL_DEMO");
     if (_demo)
     {
         // Dev-only: simulate a connected XM4 with sample settings so every screen previews
         // without hardware.
-        _device.name = "WH-1000XM4";
+        // AURAL_DEMO_DEVICE previews a different name - "Leon's Headphones" exercises the
+        // unrecognised path (SON-11), which otherwise cannot be seen without hardware.
+        _device.name = qEnvironmentVariable("AURAL_DEMO_DEVICE", QStringLiteral("WH-1000XM4"))
+                           .toStdString();
+        _identity = identifyDevice(_device.name);
         _protocol = SonyProtocol::V1;
         _conn = Conn::Connected;
         _connectionInitialized = true;
@@ -84,6 +128,20 @@ HeadphonesController::HeadphonesController(QObject* parent)
             mpEntry("MacBook Pro", "Active audio source", 1),
             mpEntry("iPhone 15", "Standby", 2)
         };
+
+        // Demo mode is a UI preview, so it also previews the honest status vocabulary:
+        // ambient has a read-back, the write-only settings do not.
+        SettingsStatus demoStatus;
+        demoStatus.ambient = SettingStatus::Confirmed;
+        demoStatus.equalizer = SettingStatus::Acknowledged;
+        demoStatus.spatial = SettingStatus::Acknowledged;
+        demoStatus.speakToChat = SettingStatus::Acknowledged;
+        demoStatus.dsee = SettingStatus::Acknowledged;
+        demoStatus.voiceGuidance = SettingStatus::Unknown;
+        demoStatus.autoPowerOff = SettingStatus::Acknowledged;
+        demoStatus.optimizer = SettingStatus::Confirmed;
+        demoStatus.multipoint = SettingStatus::Confirmed;
+        _settingStatus = statusMap(demoStatus);
         return;
     }
 
@@ -100,7 +158,8 @@ HeadphonesController::~HeadphonesController()
 }
 
 QString HeadphonesController::deviceName() const { return QString::fromStdString(_device.name); }
-QString HeadphonesController::deviceModel() const { return friendlyModel(_device.name); }
+QString HeadphonesController::deviceModel() const { return displayModel(_device.name); }
+bool HeadphonesController::modelRecognised() const { return _identity.recognised; }
 
 int HeadphonesController::batteryLevel()
 {
@@ -111,9 +170,70 @@ int HeadphonesController::batteryLevel()
 
 bool HeadphonesController::batteryCharging() { return _headphones.isBatteryCharging(); }
 
-bool HeadphonesController::supportsOptimizer() { return _headphones.supportsFeature(DEVICE_CAPABILITIES::OPTIMIZER); }
-bool HeadphonesController::supportsSpeakToChat() { return _headphones.supportsFeature(DEVICE_CAPABILITIES::SPEAK_TO_CHAT); }
-bool HeadphonesController::supportsMultipoint() { return _headphones.supportsFeature(DEVICE_CAPABILITIES::MULTI_POINT); }
+bool HeadphonesController::capabilitiesKnown() { return _demo ? true : _headphones.capabilitiesKnown(); }
+
+// SON-11. Two sources of evidence, in order: what the device said, then what we know about the
+// model. An unidentified device gives us neither, so the answer is no - the app does not
+// discover what someone's headphones support by sending them commands and seeing what happens.
+bool HeadphonesController::featureAvailable(DEVICE_CAPABILITIES cap)
+{
+    // Demo mode deliberately goes through the same gates: a preview that showed controls the
+    // real app would withhold would be worse than useless.
+    if (!connected() || _protocol != SonyProtocol::V1) return false;
+
+    switch (_headphones.featureState(cap))
+    {
+    case CapabilityState::Supported:   return true;
+    case CapabilityState::Unsupported: return false;
+    case CapabilityState::Unknown:     break;
+    }
+    // Most v1 devices never answer the capability query at all, so Unknown is the normal case
+    // for a WH-1000XM4 as much as for a stranger. The model is what tells them apart.
+    return _identity.recognised;
+}
+
+bool HeadphonesController::supportsOptimizer() { return featureAvailable(DEVICE_CAPABILITIES::OPTIMIZER); }
+bool HeadphonesController::supportsSpeakToChat() { return featureAvailable(DEVICE_CAPABILITIES::SPEAK_TO_CHAT); }
+bool HeadphonesController::supportsMultipoint() { return featureAvailable(DEVICE_CAPABILITIES::MULTI_POINT); }
+
+// The deliberate exception to featureAvailable(): ambient sound is the only setting with a
+// read-back, so an unrecognised device does not have to be taken on trust. Either it answers
+// the NC/ASM query - and the status chip says "Confirmed" - or it does not, and the chip keeps
+// saying "not read from device". Offering it is what makes the legacy attempt worth making;
+// offering the rest would be guesswork.
+bool HeadphonesController::ambientAvailable()
+{
+    if (!connected() || _protocol != SonyProtocol::V1) return false;
+    return _headphones.featureState(DEVICE_CAPABILITIES::NC_ASM) != CapabilityState::Unsupported;
+}
+
+// No capability bit covers the equalizer, and the preset table is model-specific (Custom 1/2
+// do not exist on every model), so recognition is the only evidence there is.
+bool HeadphonesController::equalizerAvailable()
+{
+    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised;
+}
+
+bool HeadphonesController::spatialAvailable() { return featureAvailable(DEVICE_CAPABILITIES::VPT); }
+
+// DSEE, voice guidance and auto power off share a shape: write-only, no capability bit, no
+// read-back, and encodings that are model-specific (the auto-power-off timeout table most
+// obviously). Sending the XM4 table to something else is exactly the guess this gate prevents,
+// and with no read-back the app would never find out it had guessed wrong.
+bool HeadphonesController::systemSettingsAvailable()
+{
+    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised;
+}
+
+QString HeadphonesController::limitedControlReason()
+{
+    if (!connected() || _protocol != SonyProtocol::V1 || _identity.recognised)
+        return QString();
+    return tr("Aural doesn't recognise this device, so it only offers the control it can "
+              "verify. Ambient sound reports its state back; everything else is "
+              "model-specific and would be a guess.");
+}
+
 
 bool HeadphonesController::focusOnVoiceAvailable()
 {
@@ -149,14 +269,23 @@ void HeadphonesController::pushAmbient()
 
 void HeadphonesController::setAmbientMode(int m)
 {
+    // Guarded here as well as in QML: the tray menu and any stale binding come through the
+    // same door, and a gated control must not reach the wire by a side route (SON-11).
+    if (!ambientAvailable()) return;
     if (m < 0 || m > 2 || _ambientMode == m) return;
     _ambientMode = m;
     pushAmbient();
     emit ambientChanged();
 }
 
+void HeadphonesController::cycleAmbientMode()
+{
+    setAmbientMode((_ambientMode + 1) % 3);
+}
+
 void HeadphonesController::setAsmLevel(int v)
 {
+    if (!ambientAvailable()) return;
     v = std::clamp(v, 1, 19);
     if (_asmLevel == v) return;
     _asmLevel = v;
@@ -167,6 +296,7 @@ void HeadphonesController::setAsmLevel(int v)
 
 void HeadphonesController::setFocusOnVoice(bool v)
 {
+    if (!ambientAvailable()) return;
     if (_focusOnVoice == v) return;
     _focusOnVoice = v;
     _headphones.setFocusOnVoice(v);
@@ -196,6 +326,7 @@ void HeadphonesController::pushEqualizer()
 
 void HeadphonesController::setEqPreset(int v)
 {
+    if (!equalizerAvailable()) return;
     if (v < 0 || v >= static_cast<int>(std::size(EQ_PRESETS)) || _eqPreset == v) return;
     _eqPreset = v;
     pushEqualizer();
@@ -204,6 +335,7 @@ void HeadphonesController::setEqPreset(int v)
 
 void HeadphonesController::setEqClearBass(int v)
 {
+    if (!equalizerAvailable()) return;
     if (_eqClearBass == v) return;
     _eqClearBass = v;
     pushEqualizer();
@@ -212,6 +344,7 @@ void HeadphonesController::setEqClearBass(int v)
 
 void HeadphonesController::setEqBand(int index, int value)
 {
+    if (!equalizerAvailable()) return;
     if (index < 0 || index >= 5 || _eqBands[index] == value) return;
     _eqBands[index] = value;
     pushEqualizer();
@@ -221,6 +354,7 @@ void HeadphonesController::setEqBand(int index, int value)
 // ---- Spatial (mutually exclusive) ----
 void HeadphonesController::setSoundPosition(int v)
 {
+    if (!spatialAvailable()) return;
     if (v < 0 || v > 5) return;
     _soundPosition = v;
     if (v != 0) _vptType = 0;
@@ -231,6 +365,7 @@ void HeadphonesController::setSoundPosition(int v)
 
 void HeadphonesController::setVptType(int v)
 {
+    if (!spatialAvailable()) return;
     if (v < 0 || v > 4) return;
     _vptType = v;
     if (v != 0) _soundPosition = 0;
@@ -242,6 +377,7 @@ void HeadphonesController::setVptType(int v)
 // ---- Speak-to-Chat ----
 void HeadphonesController::setS2cEnabled(bool v)
 {
+    if (!supportsSpeakToChat()) return;
     if (_s2cEnabled == v) return;
     _s2cEnabled = v;
     _headphones.setS2CToggle(v ? S2C_TOGGLE::ACTIVE : S2C_TOGGLE::INACTIVE);
@@ -251,6 +387,7 @@ void HeadphonesController::setS2cEnabled(bool v)
 
 void HeadphonesController::setS2cSensitivity(int v)
 {
+    if (!supportsSpeakToChat()) return;
     if (_s2cSensitivity == v) return;
     _s2cSensitivity = v;
     _headphones.setS2COptions(_s2cSensitivity, _s2cVoice, _s2cAutoOff);
@@ -259,6 +396,7 @@ void HeadphonesController::setS2cSensitivity(int v)
 
 void HeadphonesController::setS2cAutoOff(int v)
 {
+    if (!supportsSpeakToChat()) return;
     if (_s2cAutoOff == v) return;
     _s2cAutoOff = v;
     _headphones.setS2COptions(_s2cSensitivity, _s2cVoice, _s2cAutoOff);
@@ -267,6 +405,7 @@ void HeadphonesController::setS2cAutoOff(int v)
 
 void HeadphonesController::setS2cVoice(bool v)
 {
+    if (!supportsSpeakToChat()) return;
     if (_s2cVoice == v) return;
     _s2cVoice = v;
     _headphones.setS2COptions(_s2cSensitivity, _s2cVoice, _s2cAutoOff);
@@ -276,6 +415,7 @@ void HeadphonesController::setS2cVoice(bool v)
 // ---- System ----
 void HeadphonesController::setDsee(bool v)
 {
+    if (!systemSettingsAvailable()) return;
     if (_dsee == v) return;
     _dsee = v;
     _headphones.setAudioUpsampling(v);
@@ -284,6 +424,7 @@ void HeadphonesController::setDsee(bool v)
 
 void HeadphonesController::setVoiceGuidance(bool v)
 {
+    if (!systemSettingsAvailable()) return;
     if (_voiceGuidance == v) return;
     _voiceGuidance = v;
     _headphones.setVoiceGuidance(v);
@@ -292,6 +433,7 @@ void HeadphonesController::setVoiceGuidance(bool v)
 
 void HeadphonesController::setAutoPowerOff(int v)
 {
+    if (!systemSettingsAvailable()) return;
     if (v < 0 || v > 5 || _autoPowerOff == v) return;
     _autoPowerOff = v;
     _headphones.setAutoPowerOff(static_cast<AUTO_POWER_OFF>(v));
@@ -300,6 +442,7 @@ void HeadphonesController::setAutoPowerOff(int v)
 
 void HeadphonesController::mpDisconnect(int slot)
 {
+    if (!supportsMultipoint()) return;
     if (_demo)
     {
         QVariantList keep;
@@ -319,18 +462,26 @@ void HeadphonesController::refreshDevices()
 {
     if (_devicesFuture.valid() || _bt.isConnected()) return;
     setConn(Conn::Discovering);
+    _devicesSession = _session;
     _devicesFuture.setFromAsync([this]() { return _bt.getConnectedDevices(); });
 }
 
 void HeadphonesController::connectTo(const QString& mac, const QString& name)
 {
     if (_connectFuture.valid() || _bt.isConnected()) return;
+
+    // A connection attempt is a new session: results from the previous one are stale.
+    ++_session;
+    _linkLost.store(false);
+
     _device.name = name.toStdString();
     _device.mac = mac.toStdString();
-    _protocol = protocolForDeviceName(_device.name);
+    _identity = identifyDevice(_device.name);
+    _protocol = _identity.protocol;
     setConn(Conn::Connecting);
     std::string addr = _device.mac;
     SonyProtocol proto = _protocol;
+    _connectSession = _session;
     _connectFuture.setFromAsync([this, addr, proto]() { _bt.connect(addr, proto); });
 }
 
@@ -348,6 +499,7 @@ void HeadphonesController::refreshBattery()
 
 void HeadphonesController::startOptimize()
 {
+    if (!supportsOptimizer()) return;
     _optimizeRequested = true;
     _headphones.setOptimizerState(OPTIMIZER_STATE::OPTIMIZING);
     emit optimizerChanged();
@@ -365,6 +517,9 @@ void HeadphonesController::setConn(Conn c)
     if (_conn == c) return;
     _conn = c;
     emit connectionChanged();
+    // Which controls are offered depends on being connected and on which device, so the
+    // availability properties move with the connection, not only with a capability reply.
+    emit capabilitiesChanged();
 }
 
 void HeadphonesController::setSyncing(bool s)
@@ -378,53 +533,84 @@ void HeadphonesController::pump()
 {
     if (_demo) return;
 
+    // --- The headphones closed the link (reported by the reader thread) ---
+    if (_linkLost.exchange(false))
+    {
+        if (_linkLostSession.load() == _session && _conn != Conn::Disconnected)
+        {
+            emit errorOccurred("The headphones closed the connection");
+            teardownConnection();
+            refreshDevices();
+            return;
+        }
+    }
+
     // --- Discovery future ---
     if (_devicesFuture.ready())
     {
+        const bool stale = (_devicesSession != _session);
         try
         {
             auto found = _devicesFuture.get();
-            _devices.clear();
-            for (const auto& d : found)
+            if (!stale)
             {
-                QVariantMap m;
-                m["name"] = QString::fromStdString(d.name);
-                m["mac"] = QString::fromStdString(d.mac);
-                m["model"] = friendlyModel(d.name);
-                bool v2 = protocolForDeviceName(d.name) == SonyProtocol::V2;
-                m["isV2"] = v2;
-                m["badge"] = v2 ? QStringLiteral("Limited support") : QStringLiteral("Ready to connect");
-                _devices.push_back(m);
+                _devices.clear();
+                for (const auto& d : found)
+                {
+                    const DeviceIdentity identity = identifyDevice(d.name);
+                    QVariantMap m;
+                    m["name"] = QString::fromStdString(d.name);
+                    m["mac"] = QString::fromStdString(d.mac);
+                    m["model"] = displayModel(d.name);
+                    m["recognised"] = identity.recognised;
+                    const bool v2 = identity.protocol == SonyProtocol::V2;
+                    m["isV2"] = v2;
+                    if (!identity.recognised)
+                        m["badge"] = QStringLiteral("Unrecognised - will try legacy protocol");
+                    else
+                        m["badge"] = v2 ? QStringLiteral("Limited support") : QStringLiteral("Ready to connect");
+                    _devices.push_back(m);
+                }
+                emit devicesChanged();
             }
-            emit devicesChanged();
         }
-        catch (const RecoverableException& exc) { emit errorOccurred(exc.what()); }
-        catch (const std::exception& exc) { emit errorOccurred(exc.what()); }
-        if (!_bt.isConnected()) setConn(Conn::Disconnected);
+        catch (const RecoverableException& exc) { if (!stale) emit errorOccurred(exc.what()); }
+        catch (const std::exception& exc) { if (!stale) emit errorOccurred(exc.what()); }
+        if (!stale && !_bt.isConnected()) setConn(Conn::Disconnected);
     }
 
     // --- Connect future ---
     if (_connectFuture.ready())
     {
+        const bool stale = (_connectSession != _session);
         try
         {
             _connectFuture.get();
-            setConn(_bt.isConnected() ? Conn::Connected : Conn::Disconnected);
-            if (_bt.isConnected())
-                emit toast("Connected to " + deviceModel());
+            if (!stale)
+            {
+                setConn(_bt.isConnected() ? Conn::Connected : Conn::Disconnected);
+                if (_bt.isConnected())
+                    emit toast("Connected to " + deviceModel());
+            }
         }
         catch (const RecoverableException& exc)
         {
-            if (exc.shouldDisconnect) _bt.disconnect();
-            emit errorOccurred(exc.what());
-            setConn(Conn::Disconnected);
-            refreshDevices();
+            if (!stale)
+            {
+                if (exc.shouldDisconnect) _bt.disconnect();
+                emit errorOccurred(exc.what());
+                setConn(Conn::Disconnected);
+                refreshDevices();
+            }
         }
         catch (const std::exception& exc)
         {
-            emit errorOccurred(exc.what());
-            setConn(Conn::Disconnected);
-            refreshDevices();
+            if (!stale)
+            {
+                emit errorOccurred(exc.what());
+                setConn(Conn::Disconnected);
+                refreshDevices();
+            }
         }
     }
 
@@ -433,22 +619,28 @@ void HeadphonesController::pump()
     // --- Command future (settings push) + battery, v1 only ---
     if (_commandFuture.ready())
     {
+        const bool stale = (_commandSession != _session);
         setSyncing(false);
         bool wasSettingsPush = _settingsPushPending;
         _settingsPushPending = false;
         try
         {
             _commandFuture.get();
-            if (wasSettingsPush)
-                emit toast("Settings applied");
+            // "Sent" is the honest word: the headphones acknowledged the frames. Only a
+            // read-back reply can promote a setting to confirmed (see settingStatus).
+            if (!stale && wasSettingsPush)
+                emit toast("Settings sent");
         }
         catch (const RecoverableException& exc)
         {
-            QString prefix;
-            if (exc.shouldDisconnect) { teardownConnection(); refreshDevices(); prefix = "Disconnected due to: "; }
-            emit errorOccurred(prefix + exc.what());
+            if (!stale)
+            {
+                QString prefix;
+                if (exc.shouldDisconnect) { teardownConnection(); refreshDevices(); prefix = "Disconnected due to: "; }
+                emit errorOccurred(prefix + exc.what());
+            }
         }
-        catch (const std::exception& exc) { emit errorOccurred(exc.what()); }
+        catch (const std::exception& exc) { if (!stale) emit errorOccurred(exc.what()); }
     }
     else if (_commandFuture.valid())
     {
@@ -460,11 +652,13 @@ void HeadphonesController::pump()
         {
             setSyncing(true);
             _settingsPushPending = true;
+            _commandSession = _session;
             _commandFuture.setFromAsync([this]() { _headphones.setChanges(); });
         }
         else if (_wantBattery)
         {
             _wantBattery = false;
+            _commandSession = _session;
             _commandFuture.setFromAsync([this]() { _headphones.requestBattery(); });
         }
     }
@@ -474,20 +668,38 @@ void HeadphonesController::pump()
         if (_protocol == SonyProtocol::V1) pollOsBattery();
         emitLiveDeltas();
     }
+
+    refreshSettingStatus();
 }
 
 void HeadphonesController::pollOsBattery()
 {
     if (_osBatteryFuture.ready())
     {
-        try { _osBatteryLevel = _osBatteryFuture.get(); }
+        const bool stale = (_osBatterySession != _session);
+        try
+        {
+            int level = _osBatteryFuture.get();
+            if (!stale) _osBatteryLevel = level;
+        }
         catch (...) {}
     }
     if (!_osBatteryFuture.valid() && (nowMs() - _lastOsBatteryPollMs) > 5000)
     {
         _lastOsBatteryPollMs = nowMs();
         std::string name = _device.name;
+        _osBatterySession = _session;
         _osBatteryFuture.setFromAsync([this, name]() { return _bt.getDeviceBatteryLevel(name); });
+    }
+}
+
+void HeadphonesController::refreshSettingStatus()
+{
+    QVariantMap next = statusMap(_headphones.getStatuses());
+    if (next != _settingStatus)
+    {
+        _settingStatus = next;
+        emit settingStatusChanged();
     }
 }
 
@@ -516,7 +728,13 @@ void HeadphonesController::emitLiveDeltas()
     }
 
     unsigned int caps = _headphones.getCapabilities();
-    if (caps != _cCaps) { _cCaps = caps; emit capabilitiesChanged(); }
+    bool capsKnown = _headphones.capabilitiesKnown();
+    if (caps != _cCaps || capsKnown != _cCapsKnown)
+    {
+        _cCaps = caps;
+        _cCapsKnown = capsKnown;
+        emit capabilitiesChanged();
+    }
 
     bool opt = _headphones.getOptimizerState() == OPTIMIZER_STATE::OPTIMIZING;
     if (opt != _cOptimizing)
@@ -530,7 +748,7 @@ void HeadphonesController::emitLiveDeltas()
     if (fav != _cFocusAvail) { _cFocusAvail = fav; emit ambientChanged(); }
 
     // Multipoint list (device-driven)
-    if (_headphones.supportsFeature(DEVICE_CAPABILITIES::MULTI_POINT))
+    if (supportsMultipoint())
     {
         auto devs = _headphones.getDevices();
         auto conn = _headphones.getConnectedDevices();
@@ -555,42 +773,113 @@ void HeadphonesController::handleConnectionSetup()
     if (_protocol == SonyProtocol::V2) return; // v2 control not implemented yet
 
     _listener = std::make_unique<Listener>(_headphones, _bt);
+    // Runs on the reader thread: record it and let pump() (Qt thread) own the teardown.
+    const unsigned long long session = _session;
+    _listener->setDisconnectHandler([this, session]() {
+        _linkLostSession.store(session);
+        _linkLost.store(true);
+    });
     _listener->start();
+
     if (!_commandFuture.valid())
     {
         setSyncing(true);
+        _commandSession = _session;
         _commandFuture.setFromAsync([this]() { _headphones.queryState(); });
     }
 }
 
-void HeadphonesController::applyWindowTheme(QObject* window, bool dark)
-{
-#ifdef _WIN32
-    if (auto* w = qobject_cast<QWindow*>(window))
-    {
-        BOOL useDark = dark ? TRUE : FALSE;
-        DwmSetWindowAttribute(reinterpret_cast<HWND>(w->winId()),
-                              20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &useDark, sizeof(useDark));
-    }
-#else
-    Q_UNUSED(window);
-    Q_UNUSED(dark);
-#endif
-}
-
+// The single place a session ends. Stop the reader, close the socket, drain every
+// outstanding future, then reset device and UI state so nothing survives into the next
+// connection.
 void HeadphonesController::teardownConnection()
 {
-    _bt.disconnect();
-    _listener.reset();
-    if (_commandFuture.valid())
+    ++_session;
+    _linkLost.store(false);
+
+    if (_listener)
     {
-        try { _commandFuture.get(); }
-        catch (...) {}
+        // Tell the reader this shutdown is ours before closing under it, so it doesn't
+        // report a lost link we already know about.
+        _listener->requestStop();
     }
+    _bt.disconnect();
+    if (_listener)
+    {
+        _listener->stop();
+        _listener.reset();
+    }
+
+    // Drain in dependency order: the command future can be blocked on the socket we just
+    // closed, discovery and the OS battery lookup are independent.
+    auto drain = [](auto& future) {
+        if (!future.valid()) return;
+        try { future.get(); }
+        catch (...) {}
+    };
+    drain(_commandFuture);
+    drain(_connectFuture);
+    drain(_devicesFuture);
+    drain(_osBatteryFuture);
+
+    _headphones.resetState();
+    resetUiState();
+
+    setSyncing(false);
+    setConn(Conn::Disconnected);
+}
+
+// Everything the controller mirrors locally goes back to its default, so a second device
+// never inherits the first one's UI values.
+void HeadphonesController::resetUiState()
+{
     _connectionInitialized = false;
     _osBatteryLevel = -1;
     _wantBattery = false;
     _settingsPushPending = false;
-    setSyncing(false);
-    setConn(Conn::Disconnected);
+    _optimizeRequested = false;
+
+    _device = BluetoothDevice{ "", "" };
+    _identity = DeviceIdentity{};
+    _protocol = SonyProtocol::V1;
+
+    _cBattery = -1;
+    _cCharging = false;
+    _cCaps = 0;
+    _cCapsKnown = false;
+    _cOptimizing = false;
+    _cFocusAvail = false;
+    _cAmbientOn = false;
+    _cAsmLevel = 0;
+    _cFocusVoice = false;
+
+    _ambientMode = 2;
+    _asmLevel = 10;
+    _focusOnVoice = false;
+    _eqPreset = 0;
+    _eqClearBass = 0;
+    _eqBands = { 0, 0, 0, 0, 0 };
+    _soundPosition = 0;
+    _vptType = 0;
+    _s2cEnabled = false;
+    _s2cSensitivity = 0;
+    _s2cAutoOff = 0;
+    _s2cVoice = false;
+    _dsee = false;
+    _voiceGuidance = false;
+    _autoPowerOff = 0;
+    _mpDevices.clear();
+    _settingStatus = statusMap(SettingsStatus{});
+
+    emit ambientChanged();
+    emit eqChanged();
+    emit spatialChanged();
+    emit s2cChanged();
+    emit systemChanged();
+    emit multipointChanged();
+    emit batteryChanged();
+    emit capabilitiesChanged();
+    emit optimizerChanged();
+    emit settingStatusChanged();
+    emit connectionChanged();
 }

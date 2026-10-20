@@ -3,10 +3,12 @@
 #include <QObject>
 #include <QString>
 #include <QVariantList>
+#include <QVariantMap>
 #include <QTimer>
 #include <QElapsedTimer>
 
 #include <array>
+#include <atomic>
 #include <memory>
 
 #include "BluetoothWrapper.h"
@@ -20,6 +22,12 @@
 // A periodic pump() (QTimer, replacing the old render loop) drives discovery/connect futures,
 // pushes changed settings via Headphones::setChanges(), and polls battery. UI-owned settings
 // are set through WRITE setters; device-driven values are read each tick and surfaced via NOTIFY.
+//
+// Session ownership: every connection gets an id. Asynchronous results carry the id they were
+// started under and are discarded if they arrive after that session ended, so a slow discovery
+// or battery lookup from a previous device cannot describe the current one. teardownConnection()
+// is the single place a session ends - it stops the reader, closes the socket, drains every
+// outstanding future and resets device state.
 class HeadphonesController : public QObject
 {
     Q_OBJECT
@@ -30,6 +38,9 @@ class HeadphonesController : public QObject
     Q_PROPERTY(bool connected READ connected NOTIFY connectionChanged)
     Q_PROPERTY(QString deviceName READ deviceName NOTIFY connectionChanged)
     Q_PROPERTY(QString deviceModel READ deviceModel NOTIFY connectionChanged)
+    // False when the Bluetooth name doesn't match a model we know: the UI then shows the raw
+    // name and says the protocol choice is an attempt, not a fact.
+    Q_PROPERTY(bool modelRecognised READ modelRecognised NOTIFY connectionChanged)
     Q_PROPERTY(bool isV2 READ isV2 NOTIFY connectionChanged)
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
     Q_PROPERTY(bool syncing READ syncing NOTIFY syncingChanged)
@@ -38,10 +49,33 @@ class HeadphonesController : public QObject
     Q_PROPERTY(int batteryLevel READ batteryLevel NOTIFY batteryChanged)
     Q_PROPERTY(bool batteryCharging READ batteryCharging NOTIFY batteryChanged)
 
-    // Capabilities
+    // Capabilities. Most v1 devices never reply to the capability query, so the answer is
+    // usually Unknown; capabilitiesKnown says whether it is an answer at all.
+    //
+    // What we do with Unknown depends on whether we recognise the device (SON-11): for a model
+    // this client has code paths for, Unknown means "the device just doesn't answer that query"
+    // and the control is offered. For a device we cannot identify, Unknown means we know
+    // nothing, and offering a model-specific command would be a guess made with the user's
+    // headphones - so it stays hidden. See featureAvailable().
+    Q_PROPERTY(bool capabilitiesKnown READ capabilitiesKnown NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsOptimizer READ supportsOptimizer NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsSpeakToChat READ supportsSpeakToChat NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsMultipoint READ supportsMultipoint NOTIFY capabilitiesChanged)
+
+    // Which parts of the control surface this connection actually gets.
+    Q_PROPERTY(bool ambientAvailable READ ambientAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool equalizerAvailable READ equalizerAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool spatialAvailable READ spatialAvailable NOTIFY capabilitiesChanged)
+    // DSEE, voice guidance and auto power off: write-only, no capability bit, no read-back.
+    Q_PROPERTY(bool systemSettingsAvailable READ systemSettingsAvailable NOTIFY capabilitiesChanged)
+    // Non-empty when controls are being withheld, and says why. Empty otherwise.
+    Q_PROPERTY(QString limitedControlReason READ limitedControlReason NOTIFY capabilitiesChanged)
+
+    // Per-setting status: "unknown" | "requested" | "acknowledged" | "confirmed" | "failed".
+    // Keys: ambient, equalizer, spatial, speakToChat, dsee, voiceGuidance, autoPowerOff,
+    // optimizer, multipoint. An "acknowledged" setting was received by the headphones; only
+    // "confirmed" means the device reported that value back.
+    Q_PROPERTY(QVariantMap settingStatus READ settingStatus NOTIFY settingStatusChanged)
 
     // Ambient Sound. ambientMode: 0 = Noise Cancelling, 1 = Ambient Sound, 2 = Off.
     // On the wire (v1): NC = (ambient on, level 0), Ambient = (ambient on, level 1-19),
@@ -79,6 +113,11 @@ class HeadphonesController : public QObject
 
 public:
     explicit HeadphonesController(QObject* parent = nullptr);
+    // Test seam: run the whole controller - sessions, futures, teardown - against a scripted
+    // transport instead of the platform one. The only difference from the constructor above
+    // is where the connector comes from.
+    explicit HeadphonesController(std::unique_ptr<IBluetoothConnector> connector,
+                                  QObject* parent);
     ~HeadphonesController() override;
 
     bool discovering() const { return _conn == Conn::Discovering; }
@@ -86,6 +125,7 @@ public:
     bool connected() const { return _conn == Conn::Connected; }
     QString deviceName() const;
     QString deviceModel() const;
+    bool modelRecognised() const;
     bool isV2() const { return _protocol == SonyProtocol::V2; }
     QVariantList devices() const { return _devices; }
     bool syncing() const { return _syncing; }
@@ -93,9 +133,18 @@ public:
     int batteryLevel();
     bool batteryCharging();
 
+    bool capabilitiesKnown();
     bool supportsOptimizer();
     bool supportsSpeakToChat();
     bool supportsMultipoint();
+
+    bool ambientAvailable();
+    bool equalizerAvailable();
+    bool spatialAvailable();
+    bool systemSettingsAvailable();
+    QString limitedControlReason();
+
+    QVariantMap settingStatus() const { return _settingStatus; }
 
     int ambientMode() const { return _ambientMode; }
     int asmLevel() const { return _asmLevel; }
@@ -144,8 +193,8 @@ public:
     Q_INVOKABLE void cancelOptimize();
     Q_INVOKABLE void setEqBand(int index, int value);
     Q_INVOKABLE void mpDisconnect(int slot);
-    // Dark/light native window chrome (title bar). No-op off Windows.
-    Q_INVOKABLE void applyWindowTheme(QObject* window, bool dark);
+    // Cycle Noise Cancelling -> Ambient -> Off. Used by the tray menu.
+    Q_INVOKABLE void cycleAmbientMode();
 
 signals:
     void connectionChanged();
@@ -153,6 +202,7 @@ signals:
     void syncingChanged();
     void batteryChanged();
     void capabilitiesChanged();
+    void settingStatusChanged();
     void ambientChanged();
     void optimizerChanged();
     void eqChanged();
@@ -166,11 +216,17 @@ signals:
 private:
     enum class Conn { Disconnected, Discovering, Connecting, Connected };
 
+    void init();
+    // Is this feature offered on this connection? Supported -> yes, Unsupported -> no, and
+    // Unknown -> only for a model we recognise (see the Q_PROPERTY block above).
+    bool featureAvailable(DEVICE_CAPABILITIES cap);
     void pump();
     void handleConnectionSetup();
     void teardownConnection();
+    void resetUiState();
     void pollOsBattery();
     void emitLiveDeltas();
+    void refreshSettingStatus();
     void setConn(Conn c);
     void setSyncing(bool s);
     void pushEqualizer();
@@ -186,11 +242,23 @@ private:
     AsyncTask<void> _commandFuture;
     AsyncTask<int> _osBatteryFuture;
 
+    // Session an outstanding future belongs to; a result from an older session is discarded.
+    unsigned long long _session = 1;
+    unsigned long long _devicesSession = 0;
+    unsigned long long _connectSession = 0;
+    unsigned long long _commandSession = 0;
+    unsigned long long _osBatterySession = 0;
+
+    // Set from the Listener thread when the headphones close the link; acted on in pump().
+    std::atomic<bool> _linkLost{ false };
+    std::atomic<unsigned long long> _linkLostSession{ 0 };
+
     QTimer _timer;
     QElapsedTimer _clock;
 
     Conn _conn = Conn::Disconnected;
     BluetoothDevice _device;
+    DeviceIdentity _identity;
     SonyProtocol _protocol = SonyProtocol::V1;
     QVariantList _devices;
     bool _syncing = false;
@@ -204,11 +272,14 @@ private:
     int _cBattery = -1;
     bool _cCharging = false;
     unsigned int _cCaps = 0;
+    bool _cCapsKnown = false;
     bool _cOptimizing = false;
     bool _cFocusAvail = false;
     bool _cAmbientOn = false;
     int _cAsmLevel = 0;
     bool _cFocusVoice = false;
+
+    QVariantMap _settingStatus;
 
     // UI state. Ambient values track the device via the NCASM read-back; the rest mirror
     // what we last pushed (write-only settings).

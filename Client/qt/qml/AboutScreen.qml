@@ -22,12 +22,21 @@ Item {
 
             Rectangle {
                 Layout.alignment: Qt.AlignHCenter
-                width: 64; height: 64; radius: 32
+                implicitWidth: 64; implicitHeight: 64; radius: 32
                 color: Theme.primaryContainer
                 Text { anchors.centerIn: parent; text: "A"; color: Theme.primaryContainerText; font.bold: true; font.pixelSize: 30; font.family: Theme.displayFont }
             }
             Text { Layout.alignment: Qt.AlignHCenter; text: "Aural"; color: Theme.textPrimary; font.family: Theme.displayFont; font.pixelSize: Theme.display; font.weight: Font.Bold }
-            Text { Layout.alignment: Qt.AlignHCenter; text: "v2.1.0"; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+            Text { Layout.alignment: Qt.AlignHCenter; text: "v" + Build.version; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+            // The source this build came from - a version number alone cannot identify it.
+            Text {
+                Layout.alignment: Qt.AlignHCenter
+                text: Build.revision === "unknown"
+                    ? "Source revision unknown"
+                    : (Build.revision + " on " + Build.branch + (Build.modified ? " (modified)" : ""))
+                color: Theme.textSecondary
+                font.pixelSize: Theme.labelSm
+            }
 
             Rectangle {
                 Layout.fillWidth: true

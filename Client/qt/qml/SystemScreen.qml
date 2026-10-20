@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Aural
 
@@ -6,9 +7,17 @@ Item {
     id: root
     readonly property var powerOptions: ["Don't power off","After 5 min","After 30 min","After 1 hour","After 3 hours","When taken off"]
 
-    ColumnLayout {
+    // This page is the tallest one and grows with each preference, so it scrolls rather
+    // than clipping the bottom card at the minimum window height.
+    ScrollView {
         anchors.fill: parent
-        anchors.margins: Theme.xl
+        contentWidth: availableWidth
+        clip: true
+
+    ColumnLayout {
+        x: Theme.xl
+        y: Theme.xl
+        width: root.width - 2 * Theme.xl
         spacing: Theme.lg
 
         ColumnLayout {
@@ -22,12 +31,22 @@ Item {
             Layout.fillWidth: true
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: featCol.implicitHeight + 2 * Theme.lg
-            enabled: Hp.connected && !Hp.isV2
+            // Write-only settings with no read-back, so the app can never tell whether they
+            // landed. Offered only where the controller says they are safe (SON-11).
+            enabled: Hp.systemSettingsAvailable
             opacity: enabled ? 1.0 : 0.5
             ColumnLayout {
                 id: featCol
                 anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.md
                 Text { text: "Device Features"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold; font.family: Theme.displayFont }
+                Text {
+                    Layout.fillWidth: true
+                    visible: Hp.connected && !Hp.isV2 && !Hp.systemSettingsAvailable
+                    text: "Not offered for an unrecognised device: these settings are model-specific and report nothing back, so Aural could not tell you whether they worked."
+                    color: Theme.textSecondary
+                    font.pixelSize: Theme.labelSm
+                    wrapMode: Text.WordWrap
+                }
                 RowLayout {
                     Layout.fillWidth: true
                     ColumnLayout { spacing: 0
@@ -35,6 +54,11 @@ Item {
                         Text { text: "Upscale compressed audio in real time."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
                     }
                     Item { Layout.fillWidth: true }
+                    StatusChip {
+                        Layout.alignment: Qt.AlignVCenter
+                        active: Hp.systemSettingsAvailable
+                        status: Hp.settingStatus.dsee
+                    }
                     PillSwitch { checked: Hp.dsee; onToggled: (on) => Hp.dsee = on }
                 }
                 RowLayout {
@@ -44,6 +68,11 @@ Item {
                         Text { text: "Hear spoken status alerts from the headphones."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
                     }
                     Item { Layout.fillWidth: true }
+                    StatusChip {
+                        Layout.alignment: Qt.AlignVCenter
+                        active: Hp.systemSettingsAvailable
+                        status: Hp.settingStatus.voiceGuidance
+                    }
                     PillSwitch { checked: Hp.voiceGuidance; onToggled: (on) => Hp.voiceGuidance = on }
                 }
             }
@@ -54,13 +83,22 @@ Item {
             Layout.fillWidth: true
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: powCol.implicitHeight + 2 * Theme.lg
-            enabled: Hp.connected && !Hp.isV2
+            // The auto power-off timeout table is model-specific.
+            enabled: Hp.systemSettingsAvailable
             opacity: enabled ? 1.0 : 0.5
             ColumnLayout {
                 id: powCol
                 anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.sm
                 Text { text: "Power Management"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold; font.family: Theme.displayFont }
-                Text { text: "Auto power-off"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text { text: "Auto power-off"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                    Item { Layout.fillWidth: true }
+                    StatusChip {
+                        active: Hp.systemSettingsAvailable
+                        status: Hp.settingStatus.autoPowerOff
+                    }
+                }
                 AuralCombo {
                     Layout.fillWidth: true
                     model: root.powerOptions
@@ -86,9 +124,21 @@ Item {
                     currentIndex: Theme.dark ? 1 : 0
                     onActivated: (i) => Theme.dark = (i === 1)
                 }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.base
+                    ColumnLayout { spacing: 0
+                        Text { text: "Keep running in the system tray"; color: Theme.textPrimary; font.pixelSize: Theme.bodyMd; font.weight: Font.DemiBold }
+                        Text { text: "Closing the window hides Aural instead of quitting it."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                    }
+                    Item { Layout.fillWidth: true }
+                    PillSwitch { checked: App.minimiseToTray; onToggled: (on) => App.minimiseToTray = on }
+                }
             }
         }
 
-        Item { Layout.fillHeight: true }
+        // Bottom breathing room; ScrollView content has no anchor margins.
+        Item { Layout.preferredHeight: Theme.xl }
+    }
     }
 }

@@ -25,6 +25,11 @@ Item {
                 color: Theme.textSecondary
                 font.pixelSize: Theme.bodyLg
             }
+            StatusChip {
+                Layout.topMargin: Theme.xs
+                active: Hp.ambientAvailable
+                status: Hp.settingStatus.ambient
+            }
         }
 
         RowLayout {

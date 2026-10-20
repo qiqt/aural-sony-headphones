@@ -1,21 +1,25 @@
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QFont>
 #include <QFontDatabase>
 #include <QDebug>
-#include <QIcon>
-#include <QPainter>
-#include <QPixmap>
+#include <QWindow>
 
+#include "backend/AppIcon.h"
+#include "backend/AppSettings.h"
+#include "backend/BuildInfo.h"
 #include "backend/HeadphonesController.h"
+#include "backend/PlatformWindow.h"
+#include "backend/TrayController.h"
 
 int main(int argc, char* argv[])
 {
-    QGuiApplication app(argc, argv);
-    QGuiApplication::setApplicationName("Aural");
-    QGuiApplication::setOrganizationName("Aural");
+    // QApplication (not QGuiApplication): QSystemTrayIcon and its menu are QtWidgets types.
+    QApplication app(argc, argv);
+    QApplication::setApplicationName("Aural");
+    QApplication::setOrganizationName("Aural");
 
     // Use the Basic style so our custom QML styling applies uniformly across platforms
     // (the native Windows/macOS styles forbid most visual customization).
@@ -27,38 +31,33 @@ int main(int argc, char* argv[])
     int bodyId = QFontDatabase::addApplicationFont(":/fonts/Manrope.ttf");
     const QStringList bodyFams = QFontDatabase::applicationFontFamilies(bodyId);
     const QString bodyFamily = bodyFams.isEmpty() ? QStringLiteral("Manrope") : bodyFams.first();
+    qDebug() << "[Aural] build:" << BuildInfo::summary();
     qDebug() << "[Aural] body font:" << bodyFamily;
     QFont appFont(bodyFamily);
     appFont.setItalic(false);
     appFont.setStyleStrategy(QFont::PreferAntialias);
-    QGuiApplication::setFont(appFont);
+    QApplication::setFont(appFont);
 
-    // Icon font (Material Icons Outlined) — used via ligature names by Icon.qml.
+    // Icon font (Material Icons Outlined) - used via ligature names by Icon.qml, and by the
+    // window/tray artwork.
     QFontDatabase::addApplicationFont(":/fonts/MaterialIconsOutlined.otf");
-
-    // Window/taskbar icon, painted from the icon font (no .ico asset pipeline yet):
-    // headset glyph on the brand container color.
-    {
-        QPixmap pm(256, 256);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setBrush(QColor("#a078ff"));
-        p.setPen(Qt::NoPen);
-        p.drawRoundedRect(pm.rect(), 56, 56);
-        p.setPen(QColor("#340080"));
-        QFont iconFont(QStringLiteral("Material Icons Outlined"));
-        iconFont.setPixelSize(150);
-        p.setFont(iconFont);
-        p.drawText(pm.rect(), Qt::AlignCenter, QStringLiteral("headset"));
-        p.end();
-        QGuiApplication::setWindowIcon(QIcon(pm));
-    }
+    QApplication::setWindowIcon(AppIcon::headset(true));
 
     HeadphonesController controller;
+    AppSettings settings;
+    BuildInfo buildInfo;
+    PlatformWindow platform;
+    TrayController tray(&controller, &settings);
+
+    // Whether closing the window quits is TrayController's call: it depends on both the tray
+    // being there and the user's minimise-to-tray preference, and it has to follow that
+    // preference when it changes (see TrayController::applyQuitPolicy).
 
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("Hp", &controller);
+    engine.rootContext()->setContextProperty("App", &settings);
+    engine.rootContext()->setContextProperty("Platform", &platform);
+    engine.rootContext()->setContextProperty("Build", &buildInfo);
 
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
@@ -67,6 +66,9 @@ int main(int argc, char* argv[])
     engine.loadFromModule("Aural", "Main");
     if (engine.rootObjects().isEmpty())
         return -1;
+
+    if (auto* window = qobject_cast<QWindow*>(engine.rootObjects().constFirst()))
+        tray.attachWindow(window);
 
     return app.exec();
 }

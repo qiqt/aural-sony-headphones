@@ -16,6 +16,11 @@ Item {
             spacing: 4
             Text { text: "Equalizer"; color: Theme.textPrimary; font.family: Theme.displayFont; font.pixelSize: Theme.display; font.weight: Font.Bold }
             Text { text: "Shape your sound with presets or a manual 5-band curve."; color: Theme.textSecondary; font.pixelSize: Theme.bodyLg }
+            StatusChip {
+                Layout.topMargin: Theme.xs
+                active: Hp.equalizerAvailable
+                status: Hp.settingStatus.equalizer
+            }
         }
 
         // write-only note
@@ -28,7 +33,7 @@ Item {
             RowLayout {
                 id: noteRow
                 anchors.fill: parent; anchors.margins: Theme.sm; spacing: Theme.base
-                Rectangle { width: 6; height: 6; radius: 3; color: Theme.textSecondary; Layout.alignment: Qt.AlignVCenter }
+                Rectangle { implicitWidth: 6; implicitHeight: 6; radius: 3; color: Theme.textSecondary; Layout.alignment: Qt.AlignVCenter }
                 Text { text: "Equalizer settings are last set in app and may differ if changed from another device."; color: Theme.textSecondary; font.pixelSize: Theme.labelMd }
             }
         }

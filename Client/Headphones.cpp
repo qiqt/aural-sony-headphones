@@ -1,98 +1,101 @@
 #include "Headphones.h"
 #include "CommandSerializer.h"
 
+#include <memory>
 #include <stdexcept>
 
 Headphones::Headphones(BluetoothWrapper& conn) : _conn(conn)
 {
 }
 
-void Headphones::setAmbientSoundControl(bool value)
+void Headphones::setAmbientSoundControl(bool val)
 {
-    std::scoped_lock lock(_propertyMtx);
-    _ambientSoundControl.desired = value;
+	std::lock_guard guard(this->_propertyMtx);
+	this->_ambientSoundControl.setDesired(val);
 }
 
 bool Headphones::getAmbientSoundControl()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _ambientSoundControl.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_ambientSoundControl.current;
 }
 
 bool Headphones::isFocusOnVoiceAvailable()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _asmLevel.current > MINIMUM_VOICE_FOCUS_STEP && _ambientSoundControl.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_ambientSoundControl.current && this->_asmLevel.current > MINIMUM_VOICE_FOCUS_STEP;
 }
 
-void Headphones::setFocusOnVoice(bool value)
+void Headphones::setFocusOnVoice(bool val)
 {
-    std::scoped_lock lock(_propertyMtx);
-    _focusOnVoice.desired = value;
+	std::lock_guard guard(this->_propertyMtx);
+	this->_focusOnVoice.setDesired(val);
 }
 
 bool Headphones::getFocusOnVoice()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _focusOnVoice.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_focusOnVoice.current;
 }
 
 bool Headphones::isSetAsmLevelAvailable()
 {
-    return getAmbientSoundControl();
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_ambientSoundControl.current;
 }
 
-void Headphones::setAsmLevel(int value)
+void Headphones::setAsmLevel(int val)
 {
-    std::scoped_lock lock(_propertyMtx);
-    _asmLevel.desired = value;
+	std::lock_guard guard(this->_propertyMtx);
+	this->_asmLevel.setDesired(val);
 }
 
 int Headphones::getAsmLevel()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _asmLevel.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_asmLevel.current;
 }
 
-void Headphones::setSurroundPosition(SOUND_POSITION_PRESET value)
+void Headphones::setSurroundPosition(SOUND_POSITION_PRESET val)
 {
-    std::scoped_lock lock(_propertyMtx);
-    _surroundPosition.desired = value;
+	std::lock_guard guard(this->_propertyMtx);
+	this->_surroundPosition.setDesired(val);
 }
 
 SOUND_POSITION_PRESET Headphones::getSurroundPosition()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _surroundPosition.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_surroundPosition.current;
 }
 
-void Headphones::setVptType(int value)
+void Headphones::setVptType(int val)
 {
-    std::scoped_lock lock(_propertyMtx);
-    _vptType.desired = value;
+	std::lock_guard guard(this->_propertyMtx);
+	this->_vptType.setDesired(val);
 }
 
 int Headphones::getVptType()
 {
-    std::scoped_lock lock(_propertyMtx);
-    return _vptType.current;
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_vptType.current;
 }
 
 void Headphones::setOptimizerState(OPTIMIZER_STATE val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_optimizerState.desired = val;
+	this->_optimizerState.setDesired(val);
 }
 
 OPTIMIZER_STATE Headphones::getOptimizerState()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_optimizerState.current;
 }
 
 void Headphones::setS2CToggle(S2C_TOGGLE val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_speakToChat.desired = val;
+	this->_speakToChat.setDesired(val);
 }
 
 void Headphones::setS2COptions(int sensitivity, bool voice, int offTime)
@@ -100,16 +103,18 @@ void Headphones::setS2COptions(int sensitivity, bool voice, int offTime)
 	unsigned int sens = static_cast<unsigned int>(sensitivity);
 	unsigned int time = static_cast<unsigned int>(offTime);
 	std::lock_guard guard(this->_propertyMtx);
-	this->_s2cOptions.desired = (sens << 16) | (static_cast<unsigned int>(voice) << 8) | time;
+	this->_s2cOptions.setDesired((sens << 16) | (static_cast<unsigned int>(voice) << 8) | time);
 }
 
 S2C_TOGGLE Headphones::getS2CToggle()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_speakToChat.current;
 }
 
 unsigned int Headphones::getS2COptions()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_s2cOptions.current;
 }
 
@@ -129,26 +134,73 @@ void Headphones::setMultiPointConnection(int connectionId, int newDevice, int ol
 {
 	std::lock_guard guard(this->_propertyMtx);
 	if (connectionId == 1)
-		this->_dev1.desired = newDevice;
+		this->_dev1.setDesired(newDevice);
 	else
-		this->_dev2.desired = newDevice;
+		this->_dev2.setDesired(newDevice);
 }
 
 unsigned int Headphones::getCapabilities()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_capabilities;
+}
+
+bool Headphones::capabilitiesKnown()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_capabilitiesKnown;
+}
+
+CapabilityState Headphones::featureState(DEVICE_CAPABILITIES cap)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_capabilitiesKnown)
+		return CapabilityState::Unknown;
+	return (this->_capabilities & cap) ? CapabilityState::Supported : CapabilityState::Unsupported;
 }
 
 bool Headphones::supportsFeature(DEVICE_CAPABILITIES cap)
 {
-	// Show a feature when we haven't read capabilities yet, or when the device reports it.
-	return this->_capabilities == 0 || (this->_capabilities & cap);
+	return this->featureState(cap) != CapabilityState::Unsupported;
+}
+
+SettingsStatus Headphones::getStatuses()
+{
+	std::lock_guard guard(this->_propertyMtx);
+
+	// A group is only as settled as its least settled member.
+	auto worst = [](SettingStatus a, SettingStatus b) {
+		auto rank = [](SettingStatus s) {
+			switch (s)
+			{
+			case SettingStatus::Failed:       return 0;
+			case SettingStatus::Unknown:      return 1;
+			case SettingStatus::Requested:    return 2;
+			case SettingStatus::Acknowledged: return 3;
+			case SettingStatus::Confirmed:    return 4;
+			}
+			return 1;
+		};
+		return rank(a) <= rank(b) ? a : b;
+	};
+
+	SettingsStatus s;
+	s.ambient = worst(worst(this->_ambientSoundControl.status, this->_asmLevel.status), this->_focusOnVoice.status);
+	s.equalizer = this->_eq.status;
+	s.spatial = worst(this->_surroundPosition.status, this->_vptType.status);
+	s.speakToChat = worst(this->_speakToChat.status, this->_s2cOptions.status);
+	s.dsee = this->_audioUpsampling.status;
+	s.voiceGuidance = this->_voiceGuidance.status;
+	s.autoPowerOff = this->_autoPowerOff.status;
+	s.optimizer = this->_optimizerState.status;
+	s.multipoint = worst(this->_dev1.status, this->_dev2.status);
+	return s;
 }
 
 void Headphones::setEqualizer(const EqualizerConfig& cfg)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_eq.desired = cfg;
+	this->_eq.setDesired(cfg);
 }
 
 EqualizerConfig Headphones::getEqualizer()
@@ -160,38 +212,42 @@ EqualizerConfig Headphones::getEqualizer()
 void Headphones::setAudioUpsampling(bool val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_audioUpsampling.desired = val;
+	this->_audioUpsampling.setDesired(val);
 }
 
 bool Headphones::getAudioUpsampling()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_audioUpsampling.current;
 }
 
 void Headphones::setVoiceGuidance(bool val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_voiceGuidance.desired = val;
+	this->_voiceGuidance.setDesired(val);
 }
 
 bool Headphones::getVoiceGuidance()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_voiceGuidance.current;
 }
 
 void Headphones::setAutoPowerOff(AUTO_POWER_OFF val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_autoPowerOff.desired = val;
+	this->_autoPowerOff.setDesired(val);
 }
 
 AUTO_POWER_OFF Headphones::getAutoPowerOff()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_autoPowerOff.current;
 }
 
 bool Headphones::isChanged()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return !(this->_ambientSoundControl.isFulfilled() &&
 		this->_asmLevel.isFulfilled() &&
 		this->_focusOnVoice.isFulfilled() &&
@@ -210,143 +266,234 @@ bool Headphones::isChanged()
 
 void Headphones::setChanges()
 {
-	if (!(this->_optimizerState.isFulfilled()))
-	{
-		this->_conn.sendCommand(CommandSerializer::serializeXM4OptimizeCommand(this->_optimizerState.desired));
+	// One pass over every pending setting. Each group snapshots its value + revision under
+	// the lock, sends with the lock released (the Listener needs it to apply replies), then
+	// records the result against the revision that actually went out. A value changed while
+	// a frame was in flight stays pending and is sent on the next pass.
+	//
+	// A recoverable error that does not kill the link (an ACK timeout) does not abort the
+	// rest of the batch; it is remembered and rethrown once every group has had a turn.
+	std::unique_ptr<RecoverableException> firstError;
+	auto run = [&](auto&& fn) {
+		try
+		{
+			fn();
+		}
+		catch (const RecoverableException& exc)
+		{
+			if (exc.shouldDisconnect)
+				throw;
+			if (!firstError)
+				firstError = std::make_unique<RecoverableException>(exc);
+		}
+	};
 
+	run([&] {
+		this->_sendPending(this->_optimizerState, [&](OPTIMIZER_STATE val) {
+			this->_conn.sendCommand(CommandSerializer::serializeXM4OptimizeCommand(val));
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_speakToChat, [&](S2C_TOGGLE val) {
+			this->_conn.sendCommand(CommandSerializer::serializeXM4SpeakToChat(val));
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_s2cOptions, [&](unsigned int opts) {
+			unsigned char sensitivity = static_cast<unsigned char>((opts >> 16) & 0xff);
+			unsigned char voice = static_cast<unsigned char>((opts >> 8) & 0xff);
+			unsigned char offTime = static_cast<unsigned char>(opts & 0xff);
+			this->_conn.sendCommand(CommandSerializer::serializeXM4_S2C_Options(sensitivity, voice, offTime));
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_eq, [&](const EqualizerConfig& cfg) {
+			// MANUAL means "apply these band sliders"; every other id just selects the preset.
+			if (cfg.preset == static_cast<int>(EQ_PRESET::MANUAL))
+				this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
+			else
+				this->_conn.sendCommand(CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(cfg.preset)));
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_audioUpsampling, [&](bool val) {
+			this->_conn.sendCommand(CommandSerializer::serializeAudioUpsampling(val));
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_voiceGuidance, [&](bool val) {
+			// Voice guidance lives in the COMMAND_2 namespace, so it goes out as DATA_MDR_NO2.
+			this->_conn.sendCommand(CommandSerializer::serializeVoiceGuidance(val), DATA_TYPE::DATA_MDR_NO2);
+		});
+	});
+
+	run([&] {
+		this->_sendPending(this->_autoPowerOff, [&](AUTO_POWER_OFF val) {
+			this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(val));
+		});
+	});
+
+	run([&] { this->_pushNcAsm(); });
+	run([&] { this->_pushSpatial(); });
+	run([&] { this->_pushMultipoint(); });
+
+	if (firstError)
+		throw RecoverableException(*firstError);
+}
+
+// NC/ambient is one frame carrying three properties, so all three are snapshotted together.
+void Headphones::_pushNcAsm()
+{
+	bool ambient = false, voice = false;
+	int level = 0;
+	unsigned long long ambientRev = 0, voiceRev = 0, levelRev = 0;
+	{
 		std::lock_guard guard(this->_propertyMtx);
-		this->_optimizerState.fulfill();
+		if (this->_ambientSoundControl.isFulfilled() && this->_focusOnVoice.isFulfilled() && this->_asmLevel.isFulfilled())
+			return;
+		ambient = this->_ambientSoundControl.desired;
+		voice = this->_focusOnVoice.desired;
+		level = this->_asmLevel.desired;
+		ambientRev = this->_ambientSoundControl.revision;
+		voiceRev = this->_focusOnVoice.revision;
+		levelRev = this->_asmLevel.revision;
 	}
 
-	if (!(this->_speakToChat.isFulfilled()))
-	{
-		this->_conn.sendCommand(CommandSerializer::serializeXM4SpeakToChat(this->_speakToChat.desired));
+	auto ncAsmEffect = ambient ? NC_ASM_EFFECT::ADJUSTMENT_COMPLETION : NC_ASM_EFFECT::OFF;
+	auto asmId = voice ? ASM_ID::VOICE : ASM_ID::NORMAL;
+	auto asmLevel = ambient ? level : static_cast<int>(ASM_LEVEL_DISABLED);
 
+	try
+	{
+		this->_conn.sendCommand(CommandSerializer::serializeNcAndAsmSetting(
+			ncAsmEffect,
+			NC_ASM_SETTING_TYPE::LEVEL_ADJUSTMENT,
+			ASM_SETTING_TYPE::LEVEL_ADJUSTMENT,
+			asmId,
+			static_cast<char>(asmLevel)
+		));
+	}
+	catch (...)
+	{
 		std::lock_guard guard(this->_propertyMtx);
-		this->_speakToChat.fulfill();
+		this->_ambientSoundControl.markFailed(ambientRev);
+		this->_focusOnVoice.markFailed(voiceRev);
+		this->_asmLevel.markFailed(levelRev);
+		throw;
 	}
 
-	if (!(this->_s2cOptions.isFulfilled()))
+	std::lock_guard guard(this->_propertyMtx);
+	this->_ambientSoundControl.markSent(ambientRev, ambient);
+	this->_focusOnVoice.markSent(voiceRev, voice);
+	this->_asmLevel.markSent(levelRev, level);
+}
+
+// VPT and sound position are mutually exclusive and share one frame.
+void Headphones::_pushSpatial()
+{
+	int vpt = 0;
+	SOUND_POSITION_PRESET position = SOUND_POSITION_PRESET::OFF;
+	SOUND_POSITION_PRESET currentPosition = SOUND_POSITION_PRESET::OFF;
+	int currentVpt = 0;
+	unsigned long long vptRev = 0, positionRev = 0;
 	{
-		auto s2cOptions = this->_s2cOptions.desired;
-		unsigned char sensitivity = static_cast<unsigned char>((s2cOptions >> 16) & 0xff);
-		unsigned char voice = static_cast<unsigned char>((s2cOptions >> 8) & 0xff);
-		unsigned char offTime = static_cast<unsigned char>(s2cOptions & 0xff);
-
-		this->_conn.sendCommand(CommandSerializer::serializeXM4_S2C_Options(sensitivity, voice, offTime));
-
 		std::lock_guard guard(this->_propertyMtx);
-		this->_s2cOptions.fulfill();
+		if (this->_vptType.isFulfilled() && this->_surroundPosition.isFulfilled())
+			return;
+		vpt = this->_vptType.desired;
+		position = this->_surroundPosition.desired;
+		currentVpt = this->_vptType.current;
+		currentPosition = this->_surroundPosition.current;
+		vptRev = this->_vptType.revision;
+		positionRev = this->_surroundPosition.revision;
 	}
 
-	if (!(this->_eq.isFulfilled()))
-	{
-		auto cfg = this->_eq.desired;
-		// MANUAL means "apply these band sliders"; every other id just selects the preset.
-		if (cfg.preset == static_cast<int>(EQ_PRESET::MANUAL))
-			this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
-		else
-			this->_conn.sendCommand(CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(cfg.preset)));
+	VPT_INQUIRED_TYPE command;
+	unsigned char preset;
 
-		std::lock_guard guard(this->_propertyMtx);
-		this->_eq.fulfill();
+	if (vpt != 0)
+	{
+		command = VPT_INQUIRED_TYPE::VPT;
+		preset = static_cast<unsigned char>(vpt);
+	}
+	else if (position != SOUND_POSITION_PRESET::OFF)
+	{
+		command = VPT_INQUIRED_TYPE::SOUND_POSITION;
+		preset = static_cast<unsigned char>(position);
+	}
+	else if (currentVpt != 0)
+	{
+		// Turning VPT off explicitly; SOUND_POSITION OFF also clears VPT on the devices we
+		// know about, but say what we mean.
+		command = VPT_INQUIRED_TYPE::VPT;
+		preset = 0;
+	}
+	else
+	{
+		// Both requested off. Also the "device value is unknown and the user picked Off"
+		// case, which the old code treated as impossible and threw on.
+		command = VPT_INQUIRED_TYPE::SOUND_POSITION;
+		preset = static_cast<unsigned char>(SOUND_POSITION_PRESET::OFF);
+		(void)currentPosition;
 	}
 
-	if (!(this->_audioUpsampling.isFulfilled()))
+	try
 	{
-		this->_conn.sendCommand(CommandSerializer::serializeAudioUpsampling(this->_audioUpsampling.desired));
-
+		this->_conn.sendCommand(CommandSerializer::serializeVPTSetting(command, preset));
+	}
+	catch (...)
+	{
 		std::lock_guard guard(this->_propertyMtx);
-		this->_audioUpsampling.fulfill();
+		this->_vptType.markFailed(vptRev);
+		this->_surroundPosition.markFailed(positionRev);
+		throw;
 	}
 
-	if (!(this->_voiceGuidance.isFulfilled()))
+	std::lock_guard guard(this->_propertyMtx);
+	this->_vptType.markSent(vptRev, vpt);
+	this->_surroundPosition.markSent(positionRev, position);
+}
+
+// Multipoint connect/disconnect is a *request*: the connected set comes back from the device,
+// so the desired value reverts and setStateFromReply() supplies the truth.
+void Headphones::_pushMultipoint()
+{
+	Property<int>* slots[2] = { &this->_dev1, &this->_dev2 };
+
+	for (auto* slot : slots)
 	{
-		// Voice guidance lives in the COMMAND_2 namespace, so it goes out as DATA_MDR_NO2.
-		this->_conn.sendCommand(CommandSerializer::serializeVoiceGuidance(this->_voiceGuidance.desired),
-			DATA_TYPE::DATA_MDR_NO2);
+		int desired = 0, current = 0;
+		unsigned long long rev = 0;
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			if (slot->isFulfilled())
+				continue;
+			desired = slot->desired;
+			current = slot->current;
+			rev = slot->revision;
+		}
+
+		try
+		{
+			if (current != 0)
+				this->_disconnectDevice(current);
+			if (desired != 0)
+				this->_connectDevice(desired);
+		}
+		catch (...)
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			slot->markFailed(rev);
+			throw;
+		}
 
 		std::lock_guard guard(this->_propertyMtx);
-		this->_voiceGuidance.fulfill();
-	}
-
-	if (!(this->_autoPowerOff.isFulfilled()))
-	{
-		this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(this->_autoPowerOff.desired));
-
-		std::lock_guard guard(this->_propertyMtx);
-		this->_autoPowerOff.fulfill();
-	}
-
-    {
-        bool enabled, voice, pending;
-        int level;
-        {
-            std::lock_guard lock(_propertyMtx);
-            pending = !_ambientSoundControl.isFulfilled() || !_focusOnVoice.isFulfilled() || !_asmLevel.isFulfilled();
-            enabled = _ambientSoundControl.desired;
-            voice = _focusOnVoice.desired;
-            level = _asmLevel.desired;
-        }
-        if (pending)
-        {
-            _conn.sendCommand(CommandSerializer::serializeNcAndAsmSetting(
-                enabled ? NC_ASM_EFFECT::ADJUSTMENT_COMPLETION : NC_ASM_EFFECT::OFF,
-                NC_ASM_SETTING_TYPE::LEVEL_ADJUSTMENT, ASM_SETTING_TYPE::LEVEL_ADJUSTMENT,
-                voice ? ASM_ID::VOICE : ASM_ID::NORMAL, static_cast<char>(enabled ? level : 0xff)));
-            std::lock_guard lock(_propertyMtx);
-            _ambientSoundControl.current = enabled;
-            _focusOnVoice.current = voice;
-            _asmLevel.current = level;
-        }
-    }
-
-    {
-        bool pending;
-        int effect;
-        SOUND_POSITION_PRESET position, previousPosition;
-        {
-            std::lock_guard lock(_propertyMtx);
-            pending = !_vptType.isFulfilled() || !_surroundPosition.isFulfilled();
-            effect = _vptType.desired;
-            position = _surroundPosition.desired;
-            previousPosition = _surroundPosition.current;
-        }
-        if (pending)
-        {
-            const bool usePosition = effect == 0 &&
-                (position != SOUND_POSITION_PRESET::OFF || previousPosition != SOUND_POSITION_PRESET::OFF);
-            _conn.sendCommand(CommandSerializer::serializeVPTSetting(
-                usePosition ? VPT_INQUIRED_TYPE::SOUND_POSITION : VPT_INQUIRED_TYPE::VPT,
-                static_cast<unsigned char>(usePosition ? static_cast<int>(position) : effect)));
-            std::lock_guard lock(_propertyMtx);
-            _vptType.current = effect;
-            _surroundPosition.current = position;
-        }
-    }
-
-	// Multipoint: a connect/disconnect is a *request*; the actual connected set comes back
-	// via the device reply, so revert desired and let setStateFromReply update current.
-	if (!(this->_dev1.isFulfilled()))
-	{
-		if (this->_dev1.current != 0)
-			this->_disconnectDevice(this->_dev1.current);
-		if (this->_dev1.desired != 0)
-			this->_connectDevice(this->_dev1.desired);
-
-		std::lock_guard guard(this->_propertyMtx);
-		this->_dev1.desired = this->_dev1.current;
-	}
-
-	if (!(this->_dev2.isFulfilled()))
-	{
-		if (this->_dev2.current != 0)
-			this->_disconnectDevice(this->_dev2.current);
-		if (this->_dev2.desired != 0)
-			this->_connectDevice(this->_dev2.desired);
-
-		std::lock_guard guard(this->_propertyMtx);
-		this->_dev2.desired = this->_dev2.current;
+		slot->markRequestSent(rev);
 	}
 }
 
@@ -384,19 +531,29 @@ void Headphones::queryDevices()
 
 void Headphones::_connectDevice(int deviceIdx)
 {
-	if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
-		return;
+	std::string mac;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
+			return;
+		mac = this->_savedDevices[deviceIdx].mac;
+	}
 	this->_conn.sendCommand(
-		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::CONNECT, this->_savedDevices[deviceIdx].mac),
+		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::CONNECT, mac),
 		DATA_TYPE::DATA_MDR_NO2);
 }
 
 void Headphones::_disconnectDevice(int deviceIdx)
 {
-	if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
-		return;
+	std::string mac;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
+			return;
+		mac = this->_savedDevices[deviceIdx].mac;
+	}
 	this->_conn.sendCommand(
-		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, this->_savedDevices[deviceIdx].mac),
+		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, mac),
 		DATA_TYPE::DATA_MDR_NO2);
 }
 
@@ -476,6 +633,9 @@ void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 		}
 		std::lock_guard guard(this->_propertyMtx);
 		this->_capabilities = caps;
+		// A reply that lists no known function is still a reply: the device answered, so we
+		// know those features are absent rather than unread.
+		this->_capabilitiesKnown = true;
 		break;
 	}
 
@@ -522,17 +682,47 @@ void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 	}
 
 	default:
-		// Other replies (NC/ASM, EQ, ...) are handled in later phases.
+		// Other replies (EQ, spatial, speak-to-chat, ...) have no read-back yet: those
+		// settings stay Acknowledged rather than Confirmed. See SettingStatus.
 		break;
 	}
 }
 
 int Headphones::getBatteryLevel()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_batteryLevel;
 }
 
 bool Headphones::isBatteryCharging()
 {
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_batteryCharging;
+}
+
+void Headphones::resetState()
+{
+	std::lock_guard guard(this->_propertyMtx);
+
+	this->_batteryLevel = -1;
+	this->_batteryCharging = false;
+	this->_capabilities = 0;
+	this->_capabilitiesKnown = false;
+
+	this->_ambientSoundControl.reset(false);
+	this->_focusOnVoice.reset(false);
+	this->_asmLevel.reset(0);
+	this->_surroundPosition.reset(SOUND_POSITION_PRESET::OFF);
+	this->_vptType.reset(0);
+	this->_optimizerState.reset(OPTIMIZER_STATE::IDLE);
+	this->_speakToChat.reset(S2C_TOGGLE::INACTIVE);
+	this->_s2cOptions.reset(0);
+	this->_eq.reset(EqualizerConfig{});
+	this->_audioUpsampling.reset(false);
+	this->_voiceGuidance.reset(false);
+	this->_autoPowerOff.reset(AUTO_POWER_OFF::OFF);
+
+	this->_savedDevices = { BluetoothDevice{"", ""} };
+	this->_dev1.reset(0);
+	this->_dev2.reset(0);
 }

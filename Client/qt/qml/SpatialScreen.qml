@@ -16,6 +16,11 @@ Item {
             spacing: 4
             Text { text: "Spatial Sound"; color: Theme.textPrimary; font.family: Theme.displayFont; font.pixelSize: Theme.display; font.weight: Font.Bold }
             Text { text: "Virtual positioning and surround effects. Only one can be active at a time."; color: Theme.textSecondary; font.pixelSize: Theme.bodyLg }
+            StatusChip {
+                Layout.topMargin: Theme.xs
+                active: Hp.spatialAvailable
+                status: Hp.settingStatus.spatial
+            }
         }
 
         RowLayout {
@@ -93,7 +98,7 @@ Item {
             RowLayout {
                 id: exRow
                 anchors.fill: parent; anchors.margins: Theme.sm; spacing: Theme.base
-                Rectangle { width: 6; height: 6; radius: 3; color: Theme.primary; Layout.alignment: Qt.AlignVCenter }
+                Rectangle { implicitWidth: 6; implicitHeight: 6; radius: 3; color: Theme.primary; Layout.alignment: Qt.AlignVCenter }
                 Text {
                     Layout.fillWidth: true
                     text: Hp.soundPosition !== 0

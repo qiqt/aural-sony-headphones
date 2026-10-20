@@ -1,0 +1,129 @@
+name: Aural
+
+# cmake.yml covers the legacy ImGui client. This workflow covers the Aural Qt/QML client:
+# the engine test suite, the Windows app build, qmllint, and the staged release folder.
+
+on:
+  push:
+    branches: [master, multi-device]
+    paths:
+      - 'Client/**'
+      - 'packaging/**'
+      - 'LICENSE'
+      - '.github/workflows/aural.yml'
+  pull_request:
+    branches: [master, multi-device]
+    paths:
+      - 'Client/**'
+      - 'packaging/**'
+      - 'LICENSE'
+      - '.github/workflows/aural.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aural-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: 6.8.3
+
+jobs:
+  engine-tests:
+    # No Qt, no platform Bluetooth stack: every test drives the engine through
+    # FakeBluetoothConnector, so this is the fast signal and it runs anywhere.
+    name: Engine tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S Client/tests -B build/tests -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build/tests --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build/tests -C Release --output-on-failure
+
+  aural-app:
+    # The Qt client is Windows-only today: it needs WindowsBluetoothConnector, the PnP
+    # battery property and the DWM dark title bar.
+    name: Aural app (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build stamps the commit into the binary and BUILD-INFO.txt, so the artifact
+          # can be traced back to its source. A shallow checkout still has HEAD, which is all
+          # the stamp needs.
+          fetch-depth: 1
+
+      - name: Install Qt ${{ env.QT_VERSION }}
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+
+      - name: Configure
+        run: cmake -S Client/qt -B build/aural -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build/aural --config Release --parallel
+
+      - name: Controller tests
+        # Sessions, teardown ordering and capability gating live in HeadphonesController, so
+        # they can only be tested with a Qt event loop running. Driven by the same fake
+        # transport as the engine tests.
+        run: ctest --test-dir build/aural -C Release --output-on-failure
+
+      - name: QML lint
+        shell: pwsh
+        # -W 0 fails the job on any warning. Context-property false positives are disabled
+        # in Client/qt/qml/.qmllint.ini; everything else is on.
+        run: |
+          $files = Get-ChildItem Client/qt/qml/*.qml | ForEach-Object { $_.FullName }
+          qmllint -I build/aural -W 0 @files
+
+      - name: Stage release folder
+        run: cmake --build build/aural --config Release --target aural_package
+
+      - name: Smoke-check the staged folder
+        shell: pwsh
+        # Not a launch test - CI has no interactive desktop. This only asserts the deploy
+        # step produced the pieces a machine without Qt needs. Launching on a clean machine
+        # is a manual step; see packaging/README.md.
+        run: |
+          $pkg = "build/aural/package/Aural"
+          $required = @(
+            "appAural.exe",
+            "Qt6Core.dll", "Qt6Gui.dll", "Qt6Widgets.dll", "Qt6Qml.dll", "Qt6Quick.dll",
+            "Qt6QuickControls2.dll", "Qt6Svg.dll",
+            "platforms/qwindows.dll",
+            "qml/QtQuick/Controls/Basic/qmldir",
+            "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll",
+            "BUILD-INFO.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.md"
+          )
+          $missing = $required | Where-Object { -not (Test-Path (Join-Path $pkg $_)) }
+          if ($missing) {
+            Write-Host "Missing from the staged folder:"
+            $missing | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host "Staged folder looks complete ($((Get-ChildItem -Recurse -File $pkg).Count) files)."
+          Get-Content (Join-Path $pkg "BUILD-INFO.txt")
+
+      - name: Upload staged folder
+        uses: actions/upload-artifact@v4
+        with:
+          # The commit is in the artifact name as well as in BUILD-INFO.txt inside it, so a
+          # downloaded folder is identifiable without opening it.
+          name: aural-win-x64-${{ github.sha }}
+          path: build/aural/package/Aural
+          if-no-files-found: error

@@ -43,14 +43,98 @@ inline unsigned char* serviceUuidBytes(SonyProtocol protocol)
 	return protocol == SonyProtocol::V2 ? SERVICE_UUID_V2_IN_BYTES : SERVICE_UUID_IN_BYTES;
 }
 
-// Decide which protocol a device speaks from its Bluetooth name. XM5/XM6 are V2;
-// everything else defaults to V1 (WH-1000XM3/XM4, MDR-*, ...). Note: the WF-1000XM4/
-// XM5 earbuds are actually V2, but this client targets the over-ear WH series.
+// ---------------------------------------------------------------------------------------
+// Model identity
+//
+// A Bluetooth name is user-editable, so it is a hint, not an identity. We match it against
+// an explicit table of product codes rather than looking for a substring like "XM5": that
+// used to turn any device whose name happened to contain those characters into a
+// "WH-1000XM5", and a headset renamed to something personal into a confidently wrong model.
+//
+// A name we don't recognise yields SonyModel::Unknown with recognised == false. The UI shows
+// the raw Bluetooth name in that case instead of inventing a marketing name.
+// ---------------------------------------------------------------------------------------
+
+enum class SonyModel
+{
+	Unknown = 0,
+	WH_1000XM3,
+	WH_1000XM4,
+	WH_1000XM5,
+	WH_1000XM6,
+	WF_1000XM3,
+	WF_1000XM4,
+	WF_1000XM5
+};
+
+struct DeviceIdentity
+{
+	SonyModel model = SonyModel::Unknown;
+	// Protocol generation to attempt. For an unrecognised name this is the V1 default, which
+	// is an attempt, not a statement about the device.
+	SonyProtocol protocol = SonyProtocol::V1;
+	// True only when the name matched a product code in the table below.
+	bool recognised = false;
+	// Marketing name, empty when the model is Unknown.
+	const char* marketingName = "";
+};
+
+namespace detail
+{
+	struct KnownModel
+	{
+		const char* code;          // normalised product code (upper case, no separators)
+		SonyModel model;
+		SonyProtocol protocol;
+		const char* marketingName;
+	};
+
+	// The models this client has code paths for. Protocol generation only; presence here is
+	// not a claim that every feature works on that model - see the support matrix in the
+	// project notes. Only the WH-1000XM4 (V1) path has been exercised against hardware.
+	inline const KnownModel KNOWN_MODELS[] = {
+		{ "WH1000XM3", SonyModel::WH_1000XM3, SonyProtocol::V1, "WH-1000XM3" },
+		{ "WH1000XM4", SonyModel::WH_1000XM4, SonyProtocol::V1, "WH-1000XM4" },
+		{ "WH1000XM5", SonyModel::WH_1000XM5, SonyProtocol::V2, "WH-1000XM5" },
+		{ "WH1000XM6", SonyModel::WH_1000XM6, SonyProtocol::V2, "WH-1000XM6" },
+		{ "WF1000XM3", SonyModel::WF_1000XM3, SonyProtocol::V1, "WF-1000XM3" },
+		{ "WF1000XM4", SonyModel::WF_1000XM4, SonyProtocol::V2, "WF-1000XM4" },
+		{ "WF1000XM5", SonyModel::WF_1000XM5, SonyProtocol::V2, "WF-1000XM5" }
+	};
+
+	// Upper case, drop everything that is not a letter or a digit, so "WH-1000XM4",
+	// "wh_1000xm4" and "WH 1000XM4 (LE)" all normalise to the same token stream.
+	inline std::string normaliseDeviceName(const std::string& name)
+	{
+		std::string out;
+		out.reserve(name.size());
+		for (unsigned char c : name)
+		{
+			if (c >= 'a' && c <= 'z') out.push_back(static_cast<char>(c - 'a' + 'A'));
+			else if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) out.push_back(static_cast<char>(c));
+		}
+		return out;
+	}
+}
+
+inline DeviceIdentity identifyDevice(const std::string& bluetoothName)
+{
+	const std::string normalised = detail::normaliseDeviceName(bluetoothName);
+	for (const auto& known : detail::KNOWN_MODELS)
+	{
+		// The full product code has to appear: "XM5" on its own is not enough.
+		if (normalised.find(known.code) != std::string::npos)
+			return DeviceIdentity{ known.model, known.protocol, true, known.marketingName };
+	}
+	// Unrecognised: try the legacy protocol, but say that we do not know what this is.
+	return DeviceIdentity{ SonyModel::Unknown, SonyProtocol::V1, false, "" };
+}
+
+// Which protocol to attempt for a device name. Kept for the original client; new code should
+// use identifyDevice() so it can also see whether the model was actually recognised.
 inline SonyProtocol protocolForDeviceName(const std::string& name)
 {
-	if (name.find("XM5") != std::string::npos || name.find("XM6") != std::string::npos)
-		return SonyProtocol::V2;
-	return SonyProtocol::V1;
+	return identifyDevice(name).protocol;
 }
 
 #define APP_NAME "Sony Headphones App v" __HEADPHONES_APP_VERSION__
