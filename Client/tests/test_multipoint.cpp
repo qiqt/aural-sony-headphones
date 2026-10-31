@@ -1,8 +1,8 @@
 // Multipoint mode and its confirmation flow. The write, the alert and the answer are Sound Connect
-// 13.3.0 static evidence (the Python reference vectors); no headset has been asked yet. These tests
-// prove the engine only answers the alert it was sent, with the user's choice, and believes only
-// what the device reports - not that an XM4 raises the alert or drops the link the way scripted
-// here.
+// 13.3.0 static evidence (the Python reference vectors). On a WH-1000XM4 only cancelling a turn-off
+// has been captured; the test after the turn-off one replays it. These tests prove the engine only
+// answers the alert it was sent, with the user's choice, and believes only what the device reports
+// - not that an XM4 accepts a change or drops the link the way scripted here.
 
 #include "TestSupport.h"
 
@@ -256,6 +256,45 @@ TEST(multipoint_turning_off_is_confirmed_with_message_07)
 	s.f.hp.setChanges();
 	CHECK(wasSent(s.f.fake(), "98 01 07 01"));
 	CHECK(testing::waitFor([&] { return change(s.f).step == MultipointStep::None && !mode(s.f).value; }));
+}
+
+// The exchange captured from a WH-1000XM4 on 2026-10-31: multipoint on in slot D2, a turn-off,
+// and Cancel on the headphones' confirmation.
+TEST(multipoint_wh1000xm4_capture_cancelling_a_turn_off)
+{
+	EngineFixture f;
+	MultipointDevice device;
+	device.s->slot = 0xD2;
+	device.s->value = 1;
+	device.installOn(f.fake());
+	f.start();
+	f.hp.installAlertHandling();
+	discoverMultipoint(f, 0xD2);
+	f.fake().clearSent();
+
+	CHECK(f.hp.setMultipointMode(false));
+	f.hp.setChanges();
+	CHECK_MSG(testing::waitFor([&] { return change(f).step == MultipointStep::Confirming; }),
+		"99 01 07 01 should put the change in front of the user");
+	CHECK_EQ(sentLog(f), std::string("94 01 00 | D8 D2 01 00"));
+	CHECK_EQ(int(change(f).alert->messageId), int(v1::ALERT_MSG_MULTIPOINT_TO_OFF));
+	CHECK_EQ(int(change(f).alert->actionType), int(v1::ALERT_ACTION_POSITIVE_NEGATIVE));
+
+	// The read while the alert is open still says on, and the change keeps waiting.
+	f.hp.sendPendingQueries();
+	CHECK(settle(f));
+	CHECK_EQ(change(f).step, MultipointStep::Confirming);
+	CHECK_EQ(mode(f).value, true);
+
+	CHECK(f.hp.answerMultipointAlert(v1::ALERT_MSG_MULTIPOINT_TO_OFF, false));
+	f.hp.setChanges();
+	CHECK(wasSent(f.fake(), "98 01 07 00"));
+	CHECK(settle(f));   // D9 D2 01 01: still on
+	CHECK_EQ(change(f).step, MultipointStep::None);
+	CHECK_EQ(mode(f).value, true);
+	CHECK_EQ(f.hp.getStatuses().multipointMode, SettingStatus::Confirmed);
+	CHECK_EQ(device.value(), 1);
+	CHECK_EQ(countSent(f.fake(), "D8 D2 01 00"), size_t(1));
 }
 
 TEST(multipoint_alert_arriving_before_the_write_ack_still_finds_its_change)

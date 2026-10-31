@@ -9,19 +9,28 @@ we actually know about each one. It is the in-repository companion to the vault 
 
 | Tag | Meaning |
 |---|---|
-| **HW** | Exercised against a real WH-1000XM4 (see `Client/qt/UI_REVIEW.md` and `VERIFICATION.md`). |
+| **HW** | Seen on a real WH-1000XM4. Unless noted otherwise this means the protocol traces captured on 2026-10-31 (firmware not recorded); their frames are fixtures in `test_protocol.cpp`, `test_discovery.cpp` and `test_multipoint.cpp`. |
 | **APK** | Recovered statically from Sound Connect 13.3.0 serializers, decoders and callers. No capture. |
 | **GB** | Layout taken from Gadgetbridge's V1 implementation (the source of several existing commands). |
 | **Test** | Covered only by synthetic tests against `FakeBluetoothConnector`. |
 
-Nothing tagged APK or GB has been confirmed on hardware. A passing test proves the C++ matches
-the recovered evidence; it does not prove a headset accepts the bytes.
+Anything not tagged HW has not been confirmed on hardware. A passing test proves the C++ matches
+the evidence it was written from; it does not prove a headset accepts the bytes.
+
+## Protocol trace
+
+Set `AURAL_TRACE=1` before starting Aural (or the legacy client) to append every frame sent and
+received to `%TEMP%\aural-trace.log`. Set it to a path to write somewhere else. The log also
+records connects and disconnects, missing ACKs, and every reply no decoder accepted ("not used").
+The Qt app adds what the UI offered after each capability change, and any request a gate refused.
+The trace includes the headphones' address and the names of their paired devices.
 
 ## Framing and dispatch
 
 | Item | Evidence | Notes |
 |---|---|---|
 | `3E escape(type seq len32 payload checksum) 3C` | HW, APK | Unchanged transport. |
+| Connect handshake (`00 00`, then battery, `06 01`, `66 02`, table-2 `36 01`) | HW | Once, a WH-1000XM4 left the first `00 00` on a new link unacknowledged, while a fresh connection a few seconds later answered within 125 ms. The handshake used to swallow the missing ACK. The app then showed "Connected" over a link that refused everything, until the first change failed. Now the session ends at once, and the Qt app reconnects once on its own before reporting "didn't respond". That one retry after a normal connect has not been needed on hardware since. The same silence came back once while reconnecting after a multipoint change (see multipoint mode); that check runs on its own schedule and got through. The INIT reply `01 00 70 00` is not decoded. |
 | Declared length must match the frame | APK, Test | `unpackBtMessage` now reads the full big-endian length and rejects frames whose length disagrees with the bytes present. It used to trust only the low byte, which read past the end of a short frame and truncated payloads over 255 bytes. |
 | Tables | APK, Test | `0C` = table 1 (DATA_MDR), `0E` = table 2 (DATA_MDR_NO2). Replies dispatch on table first, then command, then selector. Each decoder re-checks the table, so a table-1 `37` (UPDT_RET_PARAM) can never reach the table-2 paired-device decoder. |
 | Malformed input | Test | Every decoder checks command, selector, exact length and enumerated values before reading. A frame that fails leaves state untouched. |
@@ -30,12 +39,12 @@ the recovered evidence; it does not prove a headset accepts the bytes.
 
 | Message | Evidence | Notes |
 |---|---|---|
-| `06 01` → `07 01 count ids…` | APK, Test | The count is validated and only the listed bytes are function IDs. The old parser scanned the whole reply, so a reply listing 19 functions (count `0x13`) advertised CODEC_INDICATOR (`0x13`). |
+| `06 01` → `07 01 count ids…` | HW, APK, Test | The count is validated and only the listed bytes are function IDs. The old parser scanned the whole reply, so a reply listing 19 functions (count `0x13`) advertised CODEC_INDICATOR (`0x13`). The XM4 lists 23: `71 38 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21`. That is no VPT (`41`) and no sound position (`42`), so Spatial Sound is no longer offered on it. `14 21 22 30 71 A1 C1` are not mapped yet. |
 | Discovery success | Test | `capabilitiesKnown()` is true once a valid `07` arrives. "The device listed nothing" and "the device never answered" stay distinct. Unknown keeps the existing recognised-model fallback for the controls that predate this work. |
-| `D0 slot 01` → `D1 slot fmt len title len summary type …` | APK, Test | Sent for every advertised slot D1/D2/D3. A feature is matched by its ENUM_NAME title (`TOUCH_PANEL_SETTING`, `MULTIPOINT_SETTING`) and must be BOOLEAN_TYPE with no trailing data. LIST_TYPE is never coerced. Lengths are UTF-8 byte counts ≤ 128. **No slot is assumed.** |
-| `D2 slot` → `D3/D5 slot a`, `D6 slot` → `D7/D9 slot 01 v` | APK, Test | Queued once a slot is resolved. `a`: 00 available, 01 unavailable (opposite polarity to `v`). |
-| `F0 03` → `F1 03 type` | APK, Test | Only when function `F3` is advertised. Only type `00` (ProtocolSettingType.ON_OFF) is accepted. |
-| `F2 03` → `F3/F5 03 a`, `F6 03` → `F7/F9 03 00 v` | APK, Test | Wearing control availability and value. Availability is not a worn/not-worn sensor. |
+| `D0 slot 01` → `D1 slot fmt len title len summary type …` | HW, APK, Test | Sent for every advertised slot D1/D2/D3. A feature is matched by its ENUM_NAME title (`TOUCH_PANEL_SETTING`, `MULTIPOINT_SETTING`) and must be BOOLEAN_TYPE. LIST_TYPE is never coerced. Lengths are UTF-8 byte counts ≤ 128. **No slot is assumed.** On the XM4, touch panel is D1 and multipoint is D2. Both records end `01 00`: one byte after the type, which the APK-derived reference rejected. Aural accepts it; what the byte means is not known. |
+| `D2 slot` → `D3/D5 slot a`, `D6 slot` → `D7/D9 slot 01 v` | HW, APK, Test | Queued once a slot is resolved. `a`: 00 available, 01 unavailable (opposite polarity to `v`). The XM4 replied `D3 D1 00` and `D7 D1 01 01` (touch panel available, on), and `D3 D2 00` and `D7 D2 01 01` (multipoint available, on). |
+| `F0 03` → `F1 03 type` | HW, APK, Test | Only when function `F3` is advertised. Only type `00` (ProtocolSettingType.ON_OFF) is accepted. The XM4 replies `F1 03 00`. |
+| `F2 03` → `F3/F5 03 a`, `F6 03` → `F7/F9 03 00 v` | HW (reads), APK, Test | Wearing control availability and value. Availability is not a worn/not-worn sensor. The XM4 replied `F3 03 00` and `F7 03 00 01`. |
 | Dependent queries | Test | The Listener only enqueues follow-up requests; the command worker (`sendPendingQueries`, driven by the controller's pump) sends them, so the reader stays free to receive their ACKs. |
 | Session scope | Test | Disconnect forgets the function set, slots, availability, values and queued queries. Reconnect rediscovers; nothing from the old session is replayed. |
 
@@ -51,14 +60,14 @@ stay "Sent".
 
 | Setting | Function | Read → reply / notification | Evidence | Notes |
 |---|---|---|---|---|
-| NC / ambient | 62 | `66 02` → `67/69 02 effect ncType ncValue asmType asmId level` | HW (read), APK | Every field is kept. The mode comes from the NC type and value, not only the effect and level: a device can report noise cancelling while still carrying its last ambient level. For the level-adjustment type (what the client writes) level 0 also means NC, the rule the hardware session relied on. Still read once on connect without needing `07`, as before. No extra read after writes — the XM4's notifications were seen to follow. |
-| Equalizer | 51 | `56 01` → `57/59 01 preset count levels…` | APK (layout), GB (bias) | Count validated. Levels decode only for clear bass + 5 bands, with the existing +10 bias; another shape keeps the old bands and disables the band editor. A reported `FF` is recorded as Manual (the client's own write marker). Gain conversion and persistent Custom 1/2 editing are **not** settled and were not changed. |
-| VPT / sound position | 41 / 42 | `46 01` / `46 02` → `47/49 type preset` (table 1) | APK | Each card is gated on its own function. Table-2 `47/49` is voice guidance. |
-| Speak-to-Chat toggle | F5 | `F6 05` → `F7 05 00 v` (RET), `F9 05 01 v` (NTFY) | APK | Different sub-types for RET and NTFY. `F9 05 02 v` is a preview and never changes the setting. |
-| Speak-to-Chat details | F5 | `FA 05` → `FB/FD 05 00 sens focus exit` | APK (inferred from the `FC` body) | Exit times are FAST/MID/SLOW/NONE; the UI no longer claims durations. |
-| DSEE | E2 | `E6 02` → `E7/E9 02 00 v` | APK, GB | The setting only. `E7/E9 01` (connection priority) is not decoded yet. |
-| Voice guidance | 39 | `46 01 01` on table 2 → `47/49 01 01 v` | APK (RET/NTFY), GB (GET) | Inquiry and detail bytes validated. |
-| Auto power-off | F4 | `F6 04` → `F7/F9 04 01 active selected` | APK | Both elements are kept. Choosing "off" or "when removed" keeps the selected timer instead of overwriting it with `00`. Choices offered: the model's known list (XM4: off / when taken off — from Gadgetbridge and the earlier XM4 notes, not a capture) plus anything the device reports. The `F1 04` capability layout is not recovered. |
+| NC / ambient | 62 | `66 02` → `67/69 02 effect ncType ncValue asmType asmId level` | HW (read, write, notifications), APK | Every field is kept. The mode comes from the NC type and value, not only the effect and level: a device can report noise cancelling while still carrying its last ambient level. Aural writes the level-adjustment type (`68 02 11 01 …`). The XM4 answers each write with a `69` notification that uses the dual/single/off type (`02`): `69 02 01 02 02 01 00 00` for NC, `69 02 01 02 00 01 00 0A` for ambient level 10, and `69 02 00 02 02 01 00 00` for off. Still read once on connect without needing `07`. There is no extra read after a write, because the XM4's notification follows. |
+| Equalizer | 51 | `56 01` → `57/59 01 preset count levels…` | HW (read, preset write), APK (layout), GB (bias) | Count validated. Levels decode only for clear bass + 5 bands, with the existing +10 bias; another shape keeps the old bands and disables the band editor. A reported `FF` is recorded as Manual (the client's own write marker). The XM4 reports 6 levels (`57 01 11 06 12 09 0B 0A 0D 0F`) and answers a preset write (`58 01 12 00`) with `59 01 12 06 …`. Gain conversion and persistent Custom 1/2 editing are **not** settled and were not changed. |
+| VPT / sound position | 41 / 42 | `46 01` / `46 02` → `47/49 type preset` (table 1) | APK | Each card is gated on its own function. Table-2 `47/49` is voice guidance. The XM4 advertises neither, so it gets no Spatial Sound screen. |
+| Speak-to-Chat toggle | F5 | `F6 05` → `F7 05 00 v` (RET), `F9 05 01 v` (NTFY) | HW, APK | Different sub-types for RET and NTFY. `F9 05 02 v` is a preview and never changes the setting. On the XM4, the read after a write (`F8 05 01 v`) already reports the new value. `F9 05 01 v` follows about 0.85 s after the write, then `F9 05 02 00`. Turning it on also produced `F5 05 00 00`, `F5 05 00 01` (not decoded) and an ambient notification (`69 02 01 02 00 01 00 14`). Turning it off produced an NC notification. Aural shows whichever mode the headphones report. |
+| Speak-to-Chat details | F5 | `FA 05` → `FB/FD 05 00 sens focus exit` | HW (read), APK (inferred from the `FC` body) | Exit times are FAST/MID/SLOW/NONE; the UI no longer claims durations. The XM4 replied `FB 05 00 00 00 00`. |
+| DSEE | E2 | `E6 02` → `E7/E9 02 00 v` | HW, APK, GB | The setting only. `E7/E9 01` (connection priority) is not decoded yet. The XM4 answers a write with `E9`, the "processing now" indicator `17 00 02 v` (ignored on purpose), and an undecoded `A9 01 20 10`. |
+| Voice guidance | 39 | `46 01 01` on table 2 → `47/49 01 01 v` | HW, APK (RET/NTFY), GB (GET) | Inquiry and detail bytes validated. The XM4 answers `48 01 01 v` with `49 01 01 v`. |
+| Auto power-off | F4 | `F6 04` → `F7/F9 04 01 active selected` | HW (read), APK | Both elements are kept. Choosing "off" or "when removed" keeps the selected timer instead of overwriting it with `00`. The XM4 reported `F7 04 01 10 00` (when removed). Choices offered: the model's known list (XM4: off / when taken off — from Gadgetbridge and the earlier XM4 notes) plus anything the device reports. The `F1 04` capability layout is not recovered. |
 
 Not done here: the EQ (`50/51`), VPT (`40/41`), audio (`E0/E1`) and auto power-off (`F0/F1 04`)
 capability layouts were not recovered, so ranges and choices come from the reported state and the
@@ -66,34 +75,42 @@ model, not from capability metadata.
 
 ## Touch panel and wearing control
 
-New controls on the System screen. Neither write has been sent to a headset.
+New controls on the System screen. Both writes have been sent to a WH-1000XM4, off and back on.
+The tester reported both working; the trace records only the bytes, not what the headset did.
 
 | Control | Write | Evidence | Notes |
 |---|---|---|---|
-| Touch panel | `D8 slot 01 v` | APK, Test | `slot` is the one whose `D1` reply named `TOUCH_PANEL_SETTING`; the builder refuses anything outside D1–D3. Enables or disables the touch panel. It does not remap gestures. |
-| Wearing control | `F8 03 00 v` | APK, Test | Only after `F3` was advertised and `F1 03` reported type `00`. This is the setting that lets the headset act on wearing detection. It is not a reading of whether the headphones are being worn. |
+| Touch panel | `D8 slot 01 v` | HW, APK, Test | `slot` is the one whose `D1` reply named `TOUCH_PANEL_SETTING`; the builder refuses anything outside D1–D3. Enables or disables the touch panel. It does not remap gestures. The XM4 ACKs `D8 D1 01 v` and sends `D9 D1 01 v` straight after; the read that follows returns `D7 D1 01 v`. |
+| Wearing control | `F8 03 00 v` | HW, APK, Test | Only after `F3` was advertised and `F1 03` reported type `00`. This is the setting that lets the headset act on wearing detection. It is not a reading of whether the headphones are being worn. The XM4 ACKs it and sends `F9 03 00 v` straight after; the read returns `F7 03 00 v`. |
 
 A write is accepted only when all three are true: the device described the control, its last
 availability report said available, and it has reported the current value. Before that the row
 says it is reading from the headphones, and it has no switch. The gate is checked again when the
 frame is built. If an availability notification has arrived in between, the request fails and
 nothing is sent. After the ACK the control is read again (`D6 slot` / `F6 03`). The status says
-Confirmed only once that read answers, and a value the device did not apply replaces the request
-on screen. A request still pending when the session ends is dropped, not replayed after
+Confirmed only once the device reports the value. That report is the reply to the read, or a
+notification if one comes first, as it does on the XM4. A value the device did not apply replaces
+the request on screen. A request still pending when the session ends is dropped, not replayed after
 reconnect. Writes after reconnect go to whichever slot the new discovery reports.
 
 ## Multipoint mode
 
 The multipoint on/off setting, on the System screen. This is separate from the paired-device list
 on Connected Devices (table-2 `36`–`39`), whose connect/disconnect commands do not turn the mode
-on or off. None of this flow has been run against a headset.
+on or off. On a WH-1000XM4, turning multipoint off has been traced twice: once cancelled and once
+accepted. The tester reports that turning it back on worked too, but no trace was running, so the
+`06` alert has not been captured.
+
+With multipoint off, the XM4 stops advertising `38` (paired-device management): its `07` reply
+lists 22 functions, and `36 01` is ACKed but never answered. Aural rediscovers on every connect, so
+it withdraws Connected Devices until multipoint is back on.
 
 | Message | Evidence | Notes |
 |---|---|---|
-| `D8 slot 01 v` | APK, Test | `slot` is the one whose `D1` named `MULTIPOINT_SETTING`. Same gate as the touch panel, plus two more conditions. The host must have installed alert handling: the Qt app does, and the legacy ImGui client never changes multipoint. And only one change can be in progress at a time. |
-| `94 01 00` | APK, Test | Enables fixed-message alerts (CommonStatus.ENABLE). Sent once per session, immediately before the first multipoint write. Sound Connect sends it at connect; Aural waits, so the headset is not asked to send alerts until Aural needs one. |
-| `99 01 id action` | APK, Test | `06` means turning multipoint on (Sony shows its LDAC caution for this one); `07` means turning it off. Action `00` asks only for acknowledgement; `01` offers accept or cancel. An alert is acted on only while this session's write is out, and only if it matches the requested direction. Any other alert is left unanswered: another message ID, no change out, the opposite direction, or a change already answered. |
-| `98 01 id choice` | APK, Test | The user's answer, quoting the ID that was received. `01` accepts and `00` cancels; Escape also cancels, as closing Sony's dialog does. Never sent without an alert and a choice from the user. |
+| `D8 slot 01 v` | HW (turning off), APK, Test | `slot` is the one whose `D1` named `MULTIPOINT_SETTING`. Same gate as the touch panel, plus two more conditions. The host must have installed alert handling: the Qt app does, and the legacy ImGui client never changes multipoint. And only one change can be in progress at a time. The XM4 ACKed `D8 D2 01 00`. Unlike the touch panel, no `D9` followed, and the read while the alert was open still returned `D7 D2 01 01`. |
+| `94 01 00` | HW, APK, Test | Enables fixed-message alerts (CommonStatus.ENABLE). Sent once per session, immediately before the first multipoint write. Sound Connect sends it at connect; Aural waits, so the headset is not asked to send alerts until Aural needs one. The XM4 ACKed it. |
+| `99 01 id action` | HW (`07 01`), APK, Test | `06` means turning multipoint on (Sony shows its LDAC caution for this one); `07` means turning it off. Action `00` asks only for acknowledgement; `01` offers accept or cancel. An alert is acted on only while this session's write is out, and only if it matches the requested direction. Any other alert is left unanswered: another message ID, no change out, the opposite direction, or a change already answered. The XM4 sent `99 01 07 01` 1 ms after ACKing the write. `06` and its action type have not been seen. |
+| `98 01 id choice` | HW, APK, Test | The user's answer, quoting the ID that was received. `01` accepts and `00` cancels; Escape also cancels, as closing Sony's dialog does. Never sent without an alert and a choice from the user. The XM4 ACKed `98 01 07 00` and reported `D9 D2 01 01` 1 ms later: still on, and the link stayed up. It ACKed `98 01 07 01` and closed the link 36 ms after the answer, without a `D9`. |
 
 A change moves through these steps: requested → written → confirming (the alert is on screen) →
 answered → accepted. It ends in one of four ways:
@@ -109,12 +126,44 @@ answered or accepted), Aural reconnects to the same headphones through the norma
 path. It makes its first attempt after 1.5 s, retries every 3 s, and gives up after 60 s. It then
 rediscovers the setting and reads it, and says whether the headphones applied the change. It never
 resends the change or the answer. If the user disconnects, cancels the reconnect, or picks other
-headphones, the check stops. None of these timings have been measured on hardware.
+headphones, the check stops.
+
+Measured on the XM4 after accepting a turn-off, counting from the answer:
+
+| Time | What happened |
+|---|---|
+| 0.04 s | The headphones closed the link. |
+| 1.6 s | First attempt failed within 0.14 s (Windows error 10060). |
+| 4.7 s | Second attempt connected, but the headphones never ACKed `00 00`. They sent start-up notifications instead (`A5 01 00 02`, `1B 00 02`, `A9 01 20 0B` twice, `A9 01 00`; none decoded). The session ended after the 2 s ACK timeout. |
+| 8.5 s | Third attempt: normal handshake, 274 ms to the first ACK. |
+| 9.4 s | `D7 D2 01 00` read, and Aural reported "Multipoint is now off." |
+
+That is well inside the 60 s limit. The silent second link matches the unanswered `00 00` seen on
+the very first connection: right after a link opens, the headphones may not be ready.
+`controller_multipoint_check_survives_a_failed_connect_and_a_silent_handshake` replays this
+sequence.
 
 ## XM4 hardware pass
 
-Not yet run. To be completed on a WH-1000XM4 before any APK-only behaviour is described as
-working:
+Partly run, in three traces on 2026-10-31. The first covers steps 2–4, most of step 5, and the
+reads in steps 6 and 8. It also found the two bugs described above: the unacknowledged first
+`00 00`, and the byte after BOOLEAN_TYPE that hid the touch panel and multipoint rows. The second,
+with both fixed, covers steps 7 and 8 and cancelling a multipoint turn-off. The third accepts one.
+
+| Step | Result |
+|---|---|
+| 1 | Firmware not recorded. Aural `4b8fe67` plus the uncommitted fixes. |
+| 2 | Done: 23 functions, listed under capability discovery. |
+| 3 | Done: touch panel D1, multipoint D2, no D3. |
+| 4 | Done: `F1 03 00`. |
+| 5 | Reads on connect and writes from Aural for NC/ambient, equalizer preset, Speak-to-Chat, DSEE and voice guidance. Not yet done: changes made on the headphones or in Sony's app, and band edits. |
+| 6 | One mode only: `F7 04 01 10 00`. |
+| 7 | Off and back on from Aural, each confirmed by `D9` and the `D7` read (see the touch panel table). The tester reported it working. Not yet done: a change from Sony's app, and anything that makes it unavailable. |
+| 8 | Off and back on from Aural, each confirmed by `F9` and the `F7` read. What the headset does differently with it off is not recorded. |
+| 9 | Turning it off, done both ways. Each time: `94 01 00`, `D8 D2 01 00`, then `99 01 07 01`. Cancel: `98 01 07 00`, then `D9 D2 01 01` (still on, no disconnect). Continue: `98 01 07 01`, the link drops, Aural reconnects on its own and reads `D7 D2 01 00`. Turning it on: reported working, not traced, so the `06` alert, its action type and the LDAC check are still uncaptured. |
+| 10 | Done for turning it off (see the timing table under multipoint mode). The alert arrived 27 ms after the write was sent. The user took 4 s to answer, and the XM4 waited. |
+
+To be completed on a WH-1000XM4 before any APK-only behaviour is described as working:
 
 1. Record model, firmware version and the Aural commit (`About` shows it).
 2. Capture the `07` reply on connect. Every later step depends on it: if the XM4 does not

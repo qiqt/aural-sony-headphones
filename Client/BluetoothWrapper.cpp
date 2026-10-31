@@ -1,4 +1,5 @@
 #include "BluetoothWrapper.h"
+#include "ProtocolTrace.h"
 
 #include <algorithm>
 #include <chrono>
@@ -62,6 +63,7 @@ int BluetoothWrapper::sendCommand(const std::vector<char>& bytes, DATA_TYPE data
 	{
 		std::lock_guard sendGuard(this->_sendMtx);
 		auto data = CommandSerializer::packageDataForBt(bytes, dataType, this->_seqNumber.load());
+		ProtocolTrace::frame("TX", dataType, this->_seqNumber.load(), bytes);
 		bytesSent = this->_connector->send(data.data(), data.size());
 	}
 	catch (...)
@@ -85,6 +87,7 @@ void BluetoothWrapper::sendAck(unsigned char seqNumber)
 {
 	std::lock_guard sendGuard(this->_sendMtx);
 	auto data = CommandSerializer::packageDataForBt({}, DATA_TYPE::ACK, seqNumber ^ 0x01);
+	ProtocolTrace::frame("TX", DATA_TYPE::ACK, seqNumber ^ 0x01, {});
 	this->_connector->send(data.data(), data.size());
 }
 
@@ -108,7 +111,10 @@ void BluetoothWrapper::_waitForAck(unsigned long long commandId, unsigned long l
 		return;
 
 	if (this->_session.load() != session || this->_aborted.load())
+	{
+		ProtocolTrace::line("!! the link went away while waiting for an ACK");
 		throw RecoverableException("Disconnected while waiting for an acknowledgement", true);
+	}
 
 	// wait_for returning true without a matching ack can only mean a spurious wakeup path;
 	// treat it the same as a timeout.
@@ -119,6 +125,7 @@ void BluetoothWrapper::_waitForAck(unsigned long long commandId, unsigned long l
 	// be released by it, and report the session as unusable rather than merely "this one
 	// command failed".
 	this->_desynchronized.store(true);
+	ProtocolTrace::line("!! no ACK within " + std::to_string(this->_ackTimeout.count()) + " ms: the session ends");
 	throw RecoverableException(
 		"Timed out waiting for the headphones to acknowledge a command", true);
 }
@@ -166,11 +173,23 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 	}
 	this->_ackCv.notify_all();
 	this->_readBuffer.clear();
-	this->_connector->connect(addr, protocol);
+	ProtocolTrace::line("CONNECT " + addr + (protocol == SonyProtocol::V2 ? " (v2)" : " (v1)"));
+	try
+	{
+		this->_connector->connect(addr, protocol);
+	}
+	catch (const std::exception& exc)
+	{
+		ProtocolTrace::line(std::string("!! connect failed: ") + exc.what());
+		throw;
+	}
+	ProtocolTrace::line("connected");
 }
 
 void BluetoothWrapper::disconnect() noexcept
 {
+	if (ProtocolTrace::enabled())
+		ProtocolTrace::line("DISCONNECT (closed by Aural)");
 	// Release any sender currently blocked in _waitForAck so teardown doesn't wait out the timeout.
 	this->notifyLinkLost();
 	this->_seqNumber.store(0);
@@ -216,7 +235,19 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 			{
 				Buffer frame(start + 1, end);
 				this->_readBuffer.erase(this->_readBuffer.begin(), end + 1);
-				return CommandSerializer::unpackBtMessage(frame);
+				try
+				{
+					auto msg = CommandSerializer::unpackBtMessage(frame);
+					ProtocolTrace::frame("RX", msg.dataType, msg.seqNumber, msg.messageBytes);
+					return msg;
+				}
+				catch (const std::exception& exc)
+				{
+					// Raw (still escaped) bytes between the markers: what arrived, not what we hoped.
+					if (ProtocolTrace::enabled())
+						ProtocolTrace::line("RX unreadable frame  " + ProtocolTrace::hex(frame) + "  (" + exc.what() + ")");
+					throw;
+				}
 			}
 		}
 
@@ -225,6 +256,7 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 		{
 			// The far end closed the RFCOMM channel. Wake any waiting sender: nothing else
 			// is going to arrive on this link.
+			ProtocolTrace::line("!! the headphones closed the link");
 			this->notifyLinkLost();
 			throw ConnectionClosedException("Connection closed by the headphones");
 		}

@@ -364,6 +364,13 @@ public:
 		return _connectCount;
 	}
 
+	// Every connect() call, including the ones that failed.
+	int connectAttempts()
+	{
+		std::lock_guard<std::mutex> guard(_mtx);
+		return _connectAttempts;
+	}
+
 	// How many times the reader has called recv(). A reader that spins on a dead link makes
 	// this grow without bound, which is exactly the failure SON-8 is about.
 	int recvCount()

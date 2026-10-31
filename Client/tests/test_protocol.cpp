@@ -105,12 +105,14 @@ TEST(protocol_general_setting_capability_validation)
 {
 	const Buffer valid = replies::generalSettingCapability(0xD2, v1::GS_TITLE_TOUCH_PANEL);
 
-	// Trailing data after a boolean type: not a plain boolean.
+	// A byte after the boolean type is still a boolean. The Python reference rejects it, but a
+	// WH-1000XM4 sends exactly that (01 00) for both of its boolean settings; see the capture test.
 	Buffer trailing = valid;
 	trailing.push_back(0x00);
 	auto withTrailing = parseGeneralSettingCapability(msg(trailing));
 	CHECK(withTrailing.has_value());
-	CHECK(!isBooleanGeneralSetting(*withTrailing));
+	CHECK(isBooleanGeneralSetting(*withTrailing));
+	CHECK_EQ(withTrailing->typeSpecificBytes, size_t(1));
 
 	// LIST_TYPE: an index, never coerced to a bool.
 	Buffer list = valid;
@@ -233,6 +235,118 @@ TEST(protocol_wearing_vectors)
 	// set_wearing: F8 03 00(ON_OFF) value.
 	CHECK_EQ(toHex(serializeWearingControl(true)), std::string("F8 03 00 01"));
 	CHECK_EQ(toHex(serializeWearingControl(false)), std::string("F8 03 00 00"));
+}
+
+// ---- replies captured from hardware -------------------------------------------------------------
+
+// Every reply below was captured from a WH-1000XM4 by the Aural protocol trace (AURAL_TRACE) on
+// 2026-10-31; the firmware version was not recorded. Unlike the rest of this file, this is
+// hardware evidence: each reply must decode exactly as shown.
+TEST(protocol_wh1000xm4_captured_replies_decode)
+{
+	auto ids = parseSupportedFunctions(msg("07 01 17 71 38 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21"));
+	CHECK(ids.has_value());
+	CHECK_EQ(ids->size(), size_t(23));
+	const std::set<unsigned char> advertised = asSet(*ids);
+	CHECK(advertised.count(0x62) && advertised.count(0xD1) && advertised.count(0xD2) && advertised.count(0xF3));
+	CHECK_MSG(!advertised.count(0x41) && !advertised.count(0x42), "the XM4 has neither VPT nor sound position");
+	CHECK(!advertised.count(0xD3));
+
+	// Both boolean records carry one byte after the type.
+	auto touch = parseGeneralSettingCapability(msg(
+		"D1 D1 02 13 54 4F 55 43 48 5F 50 41 4E 45 4C 5F 53 45 54 54 49 4E 47 00 01 00"));
+	CHECK(touch.has_value());
+	CHECK(namesGeneralSetting(*touch, v1::GS_TITLE_TOUCH_PANEL));
+	CHECK(isBooleanGeneralSetting(*touch));
+	CHECK(touch->summary.empty());
+	auto multipoint = parseGeneralSettingCapability(msg(
+		"D1 D2 02 12 4D 55 4C 54 49 50 4F 49 4E 54 5F 53 45 54 54 49 4E 47 1A 4D 55 4C 54 49 50 4F 49 4E 54 5F "
+		"53 45 54 54 49 4E 47 5F 53 55 4D 4D 41 52 59 01 00"));
+	CHECK(multipoint.has_value());
+	CHECK(namesGeneralSetting(*multipoint, v1::GS_TITLE_MULTIPOINT));
+	CHECK(isBooleanGeneralSetting(*multipoint));
+	CHECK_EQ(multipoint->summary, std::string("MULTIPOINT_SETTING_SUMMARY"));
+
+	auto battery = parseBattery(msg("11 00 28 00"));
+	CHECK(battery.has_value() && battery->level == 40 && !battery->charging);
+
+	// NC/ASM: the client writes the level-adjustment type; the XM4 reports dual/single/off.
+	auto nc = parseNcAsm(msg("67 02 01 02 02 01 00 00"));
+	CHECK(nc.has_value() && ambientModeOf(*nc) == AmbientMode::NoiseCancelling);
+	auto ambient = parseNcAsm(msg("69 02 01 02 00 01 00 0A"));
+	CHECK(ambient.has_value() && ambientModeOf(*ambient) == AmbientMode::AmbientSound && ambient->asmLevel == 10);
+	auto off = parseNcAsm(msg("69 02 00 02 02 01 00 00"));
+	CHECK(off.has_value() && ambientModeOf(*off) == AmbientMode::Off);
+
+	auto eq = parseEqualizer(msg("57 01 11 06 12 09 0B 0A 0D 0F"));
+	CHECK(eq.has_value() && eq->preset == 0x11 && eq->levels.size() == 6);
+
+	auto s2cOff = parseSpeakToChatToggle(msg("F7 05 00 00"));
+	CHECK(s2cOff.has_value() && !s2cOff->enabled && !s2cOff->preview);
+	auto s2cOn = parseSpeakToChatToggle(msg("F9 05 01 01"));
+	CHECK(s2cOn.has_value() && s2cOn->enabled && !s2cOn->preview);
+	auto preview = parseSpeakToChatToggle(msg("F9 05 02 00"));
+	CHECK(preview.has_value() && preview->preview);
+	CHECK(parseSpeakToChatDetails(msg("FB 05 00 00 00 00")).has_value());
+
+	auto dseeOff = parseUpscaling(msg("E7 02 00 00"));
+	CHECK(dseeOff.has_value() && !*dseeOff);
+	auto dseeOn = parseUpscaling(msg("E9 02 00 01"));
+	CHECK(dseeOn.has_value() && *dseeOn);
+
+	auto guidance = parseVoiceGuidance(msg("47 01 01 01", DATA_TYPE::DATA_MDR_NO2));
+	CHECK(guidance.has_value() && *guidance);
+
+	auto powerOff = parseAutoPowerOff(msg("F7 04 01 10 00"));
+	CHECK(powerOff.has_value() && powerOff->activeElement == v1::APO_ELEMENT_WHEN_REMOVED);
+
+	auto wearingType = parseWearingCapability(msg("F1 03 00"));
+	CHECK(wearingType.has_value() && *wearingType == v1::PROTOCOL_SETTING_TYPE_ON_OFF);
+	auto wearingAvailable = parseWearingAvailability(msg("F3 03 00"));
+	CHECK(wearingAvailable.has_value() && wearingAvailable->available);
+	auto wearingOn = parseWearingSetting(msg("F7 03 00 01"));
+	CHECK(wearingOn.has_value() && wearingOn->enabled);
+}
+
+// The second WH-1000XM4 capture: the touch panel, wearing control and multipoint writes.
+TEST(protocol_wh1000xm4_captured_control_writes)
+{
+	// What the client sent, byte for byte.
+	CHECK_EQ(toHex(serializeGeneralSettingBool(0xD1, false)), std::string("D8 D1 01 00"));
+	CHECK_EQ(toHex(serializeGeneralSettingBool(0xD1, true)), std::string("D8 D1 01 01"));
+	CHECK_EQ(toHex(serializeWearingControl(false)), std::string("F8 03 00 00"));
+	CHECK_EQ(toHex(serializeWearingControl(true)), std::string("F8 03 00 01"));
+	CHECK_EQ(toHex(serializeAlertEnable()), std::string("94 01 00"));
+	CHECK_EQ(toHex(serializeGeneralSettingBool(0xD2, false)), std::string("D8 D2 01 00"));
+	CHECK_EQ(toHex(serializeMultipointAlertResponse(0x07, false)), std::string("98 01 07 00"));
+
+	// What the headphones answered.
+	for (const char* text : { "D3 D1 00", "D3 D2 00" })
+	{
+		auto available = parseGeneralSettingAvailability(msg(text));
+		CHECK_MSG(available.has_value() && available->available, std::string("available: ") + text);
+	}
+	auto touchOn = parseGeneralSettingBool(msg("D7 D1 01 01"));
+	CHECK(touchOn.has_value() && touchOn->selector == 0xD1 && touchOn->enabled);
+	auto touchOff = parseGeneralSettingBool(msg("D9 D1 01 00"));
+	CHECK(touchOff.has_value() && touchOff->selector == 0xD1 && !touchOff->enabled);
+	auto multipointOn = parseGeneralSettingBool(msg("D9 D2 01 01"));
+	CHECK(multipointOn.has_value() && multipointOn->selector == 0xD2 && multipointOn->enabled);
+	auto wearingOff = parseWearingSetting(msg("F9 03 00 00"));
+	CHECK(wearingOff.has_value() && !wearingOff->enabled);
+
+	// Turning multipoint off asks for accept or cancel.
+	auto alert = parseMultipointAlert(msg("99 01 07 01"));
+	CHECK(alert.has_value() && alert->messageId == v1::ALERT_MSG_MULTIPOINT_TO_OFF && alert->actionType == 0x01);
+	CHECK_EQ(toHex(serializeMultipointAlertResponse(0x07, true)), std::string("98 01 07 01"));
+
+	// After accepting, the XM4 reconnects with multipoint off and lists 22 functions:
+	// paired-device management (38) is gone.
+	auto afterwards = parseSupportedFunctions(msg("07 01 16 71 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21"));
+	CHECK(afterwards.has_value() && afterwards->size() == 22);
+	CHECK(!asSet(*afterwards).count(0x38));
+	auto multipointOff = parseGeneralSettingBool(msg("D7 D2 01 00"));
+	CHECK(multipointOff.has_value() && multipointOff->selector == 0xD2 && !multipointOff->enabled);
 }
 
 // ---- fixed-message alerts ------------------------------------------------------------------------

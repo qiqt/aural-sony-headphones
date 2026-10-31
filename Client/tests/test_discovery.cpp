@@ -419,6 +419,41 @@ TEST(discovery_reconnect_rediscovers_instead_of_replaying)
 	CHECK(!wasSent(f.fake(), "D6 D1"));
 }
 
+// The discovery replies a WH-1000XM4 sent (AURAL_TRACE capture, 2026-10-31). Before the extra byte
+// after BOOLEAN_TYPE was allowed, both touch panel and multipoint were ruled unsupported here.
+TEST(discovery_wh1000xm4_capture_resolves_touch_multipoint_and_wearing)
+{
+	EngineFixture f;
+	f.start();
+
+	CHECK(deliver(f, hex("07 01 17 71 38 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21")));
+	CHECK(f.hp.capabilitiesKnown());
+	CHECK(f.hp.functionState(FUNCTION_TYPE::NC_ASM) == CapabilityState::Supported);
+	CHECK(f.hp.functionState(FUNCTION_TYPE::VPT) == CapabilityState::Unsupported);
+	CHECK(f.hp.functionState(FUNCTION_TYPE::SOUND_POSITION) == CapabilityState::Unsupported);
+	f.hp.sendPendingQueries();
+	CHECK(wasSent(f.fake(), "D0 D1 01"));
+	CHECK(wasSent(f.fake(), "D0 D2 01"));
+	CHECK(!wasSent(f.fake(), "D0 D3 01"));
+	CHECK(wasSent(f.fake(), "F0 03"));
+
+	CHECK(deliver(f, hex("D1 D1 02 13 54 4F 55 43 48 5F 50 41 4E 45 4C 5F 53 45 54 54 49 4E 47 00 01 00")));
+	CHECK(deliver(f, hex("D1 D2 02 12 4D 55 4C 54 49 50 4F 49 4E 54 5F 53 45 54 54 49 4E 47 1A 4D 55 4C 54 49 50 "
+		"4F 49 4E 54 5F 53 45 54 54 49 4E 47 5F 53 55 4D 4D 41 52 59 01 00")));
+	CHECK(deliver(f, hex("F1 03 00")));
+
+	CHECK(touch(f).support == CapabilityState::Supported);
+	CHECK_EQ(int(touch(f).selector), 0xD1);
+	CHECK(multipoint(f).support == CapabilityState::Supported);
+	CHECK_EQ(int(multipoint(f).selector), 0xD2);
+	CHECK(wearing(f).support == CapabilityState::Supported);
+
+	f.fake().clearSent();
+	f.hp.sendPendingQueries();
+	for (const char* read : { "D2 D1", "D6 D1", "D2 D2", "D6 D2", "F2 03", "F6 03" })
+		CHECK_MSG(wasSent(f.fake(), read), std::string("expected the follow-up read ") + read);
+}
+
 TEST(discovery_upscaling_indicator_is_not_the_dsee_setting)
 {
 	EngineFixture f;

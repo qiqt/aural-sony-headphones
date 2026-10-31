@@ -1,7 +1,7 @@
 // Touch panel and wearing control writes. Both layouts come from Sound Connect 13.3.0 static code
-// (the Python reference vectors); neither frame has been sent to a headset yet. These tests prove
-// the engine writes only what discovery negotiated and believes only what the device reads back,
-// not that an XM4 accepts the frames.
+// (the Python reference vectors); a WH-1000XM4 has since accepted both (the captured frames are in
+// test_protocol.cpp). These tests prove the engine writes only what discovery negotiated and
+// believes only what the device reports.
 
 #include "TestSupport.h"
 

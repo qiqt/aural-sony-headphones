@@ -1,5 +1,6 @@
 #include "Headphones.h"
 #include "CommandSerializer.h"
+#include "ProtocolTrace.h"
 
 #include <memory>
 #include <stdexcept>
@@ -984,12 +985,27 @@ void Headphones::queryState()
 {
 	// v1 connect handshake. Each send blocks only until it's ACKed; the actual replies
 	// arrive asynchronously on the Listener thread and land in setStateFromReply().
-	// Each query is independent so a request the device ignores doesn't block the others.
-	try { this->_conn.sendCommand({ 0x00, 0x00 }); } catch (const RecoverableException&) {} // INIT_REQUEST
-	try { this->requestBattery(); }                  catch (const RecoverableException&) {}
-	try { this->queryDeviceCapabilities(); }         catch (const RecoverableException&) {}
-	try { this->queryNcAsmState(); }                 catch (const RecoverableException&) {}
-	try { this->queryDevices(); }                    catch (const RecoverableException&) {}
+	// A request the device ignores still gets its ACK, so it does not stop the others. A
+	// missing ACK does: the transport can no longer tell which command a late ACK belongs to,
+	// so the link is unusable (see BluetoothWrapper). That ends the handshake here, rather than
+	// leaving a "connected" link that fails on the user's first change - which is what a
+	// WH-1000XM4 produced when it left the very first INIT on a new link unacknowledged.
+	auto step = [](auto&& send) {
+		try
+		{
+			send();
+		}
+		catch (const RecoverableException& exc)
+		{
+			if (exc.shouldDisconnect)
+				throw;
+		}
+	};
+	step([&] { this->_conn.sendCommand({ 0x00, 0x00 }); }); // INIT_REQUEST
+	step([&] { this->requestBattery(); });
+	step([&] { this->queryDeviceCapabilities(); });
+	step([&] { this->queryNcAsmState(); });
+	step([&] { this->queryDevices(); });
 }
 
 void Headphones::queryNcAsmState()
@@ -1110,6 +1126,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 	case v1::t1::CONNECT_RET_SUPPORT_FUNCTION:
 		if (auto ids = parseSupportedFunctions(msg))
 			this->_applySupportedFunctions(*ids);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::COMMON_RET_BATTERY_LEVEL:
@@ -1120,6 +1138,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			this->_batteryLevel = battery->level;
 			this->_batteryCharging = battery->charging;
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::NCASM_RET_PARAM:
@@ -1128,6 +1148,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 		// ANC button).
 		if (auto ncAsm = parseNcAsm(msg))
 			this->_applyNcAsm(*ncAsm);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::VPT_RET_PARAM:
@@ -1141,12 +1163,16 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			else
 				this->_surroundPosition.setState(static_cast<SOUND_POSITION_PRESET>(spatial->preset));
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::EQEBB_RET_PARAM:
 	case v1::t1::EQEBB_NTFY_PARAM:
 		if (auto eq = parseEqualizer(msg))
 			this->_applyEqualizer(*eq);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::AUDIO_RET_PARAM:
@@ -1157,6 +1183,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			std::lock_guard guard(this->_propertyMtx);
 			this->_audioUpsampling.setState(*upscaling);
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::SYSTEM_RET_EXTENDED_PARAM:
@@ -1168,6 +1196,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			std::lock_guard guard(this->_propertyMtx);
 			this->_s2cOptions.setState(packed);
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::OPT_NTFY_STATUS:
@@ -1176,6 +1206,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			std::lock_guard guard(this->_propertyMtx);
 			this->_optimizerState.setState(*optimizing ? OPTIMIZER_STATE::OPTIMIZING : OPTIMIZER_STATE::IDLE);
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::COMMON_RET_UPSCALING_EFFECT:
@@ -1187,6 +1219,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 	case v1::t1::GENERAL_SETTING_RET_CAPABILITY:
 		if (auto cap = parseGeneralSettingCapability(msg))
 			this->_applyGeneralSettingCapability(*cap);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::GENERAL_SETTING_RET_STATUS:
@@ -1197,6 +1231,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			if (DiscoveredToggle* toggle = this->_generalSettingForSlotLocked(status->selector))
 				toggle->availability = status->available ? Availability::Available : Availability::Unavailable;
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::GENERAL_SETTING_RET_PARAM:
@@ -1211,6 +1247,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 					this->_settleMultipointChangeLocked();
 			}
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::ALERT_NTFY_PARAM:
@@ -1218,12 +1256,16 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 		// unanswered rather than accepted or refused on the user's behalf.
 		if (auto alert = parseMultipointAlert(msg))
 			this->_applyMultipointAlert(*alert);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::SYSTEM_RET_CAPABILITY:
 		// F1 is shared by every system feature; only the wearing-control selector is decoded.
 		if (auto settingType = parseWearingCapability(msg))
 			this->_applyWearingCapability(*settingType);
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::SYSTEM_RET_STATUS:
@@ -1235,6 +1277,8 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 				this->_wearingControl.availability =
 					status->available ? Availability::Available : Availability::Unavailable;
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t1::SYSTEM_RET_PARAM:
@@ -1262,11 +1306,14 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 				this->_speakToChat.setState(s2c->enabled ? S2C_TOGGLE::ACTIVE : S2C_TOGGLE::INACTIVE);
 			}
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	default:
 		// Replies without a decoder here change nothing; their settings stay Acknowledged
 		// rather than Confirmed. See SettingStatus.
+		ProtocolTrace::unused(msg);
 		break;
 	}
 }
@@ -1338,6 +1385,8 @@ void Headphones::_applyTable2(const CommandSerializer::Message& msg)
 			this->_dev1.setState(dev1);
 			this->_dev2.setState(dev2);
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	case v1::t2::VOICE_GUIDANCE_RET_PARAM:
@@ -1348,9 +1397,12 @@ void Headphones::_applyTable2(const CommandSerializer::Message& msg)
 			std::lock_guard guard(this->_propertyMtx);
 			this->_voiceGuidance.setState(*enabled);
 		}
+		else
+			ProtocolTrace::unused(msg);
 		break;
 
 	default:
+		ProtocolTrace::unused(msg);
 		break;
 	}
 }

@@ -155,8 +155,10 @@ namespace CommandSerializer
 	std::optional<GeneralSettingCapability> parseGeneralSettingCapability(const Message& msg);
 	// Sony matches a title only when the record uses the ENUM_NAME string format.
 	bool namesGeneralSetting(const GeneralSettingCapability& cap, const char* title);
-	// A plain boolean: BOOLEAN_TYPE with no type-specific data after it. A list type carries an
-	// index, not a bool, and must not be coerced into one.
+	// A boolean setting: BOOLEAN_TYPE. A WH-1000XM4 follows the type byte with one more byte (00)
+	// on both of its boolean records; what it means is not recovered, and it changes nothing about
+	// how the value is read or written, so it is allowed. A list type carries an index, not a
+	// bool, and must not be coerced into one.
 	bool isBooleanGeneralSetting(const GeneralSettingCapability& cap);
 
 	// D3/D5 slot status, F3/F5 03 status. available == (status == STATUS_ENABLE).

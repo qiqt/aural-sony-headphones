@@ -308,10 +308,13 @@ public:
 	};
 	std::shared_ptr<State> s = std::make_shared<State>();
 
-	void installOn(FakeBluetoothConnector& fake)
+	void installOn(FakeBluetoothConnector& fake) { fake.setScript(script()); }
+
+	// The headset's behaviour, for a test that wraps it.
+	FakeBluetoothConnector::Script script()
 	{
 		auto st = s;
-		fake.setScript([st](FakeBluetoothConnector& device, const CommandSerializer::Message& msg) {
+		return [st](FakeBluetoothConnector& device, const CommandSerializer::Message& msg) {
 			if (msg.dataType == DATA_TYPE::ACK)
 				return;
 			const std::string req = toHex(msg.messageBytes);
@@ -364,6 +367,8 @@ public:
 						else
 							out.push_back(valueFrame(0xD9));
 					}
+					else if (st->held >= 0)
+						out.push_back(valueFrame(0xD9));   // a WH-1000XM4 reports the unchanged value
 					st->held = -1;
 				}
 			}
@@ -376,7 +381,7 @@ public:
 					device.enqueueData(frame);
 			if (drop)
 				device.closeRemote();
-		});
+		};
 	}
 
 	int value()

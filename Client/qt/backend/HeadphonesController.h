@@ -302,6 +302,8 @@ private:
     void resetUiState();
     void pollOsBattery();
     void emitLiveDeltas();
+    // AURAL_TRACE only: log what this connection offers after a capability change.
+    void traceOffer();
     // Copy values the device reported into the UI state. Skips a setting while a user change
     // to it is still waiting to be sent, so a notification cannot snap the control back.
     void syncReadBack(const SettingsStatus& statuses);
@@ -312,6 +314,9 @@ private:
     // The link went away underneath us (the reader saw it close, or a send failed). If a
     // multipoint change was out, that may be the headphones applying it: reconnect and check.
     void endSessionAfterLinkLoss(const QString& message);
+    // The connect handshake failed: the headphones left a command on the new link unacknowledged.
+    // Reconnect once on a fresh link before reporting it.
+    void handshakeFailed(const QString& reason);
     // Reconnect attempts and verification for a multipoint change that outlived its session.
     void driveMultipointReconnect();
     void finishMultipointReconnect(const QString& message);
@@ -431,6 +436,16 @@ private:
         qint64 connectedMs = -1;   // when the new session came up; -1 while reconnecting
     };
     std::optional<MultipointReconnect> _mpReconnect;
+
+    // The connect handshake, and the one automatic retry a failed handshake gets.
+    bool _handshakePending = false;   // the command future is running queryState()
+    bool _handshakeRetried = false;   // this connection attempt is already the retry
+    struct RetryConnect
+    {
+        BluetoothDevice device;
+        qint64 atMs = 0;
+    };
+    std::optional<RetryConnect> _retryConnect;
 
     QVariantList _mpDevices;
 

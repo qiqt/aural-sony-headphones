@@ -4,6 +4,37 @@
 
 #include <thread>
 
+// Seen on a WH-1000XM4: the very first INIT on a new link went unacknowledged. The handshake used
+// to swallow that and carry on, so the app showed "connected" over a link that refused every
+// later command - and failed only when the user changed noise cancelling.
+TEST(lifecycle_unacknowledged_handshake_ends_the_session)
+{
+	EngineFixture f;
+	f.fake().setScript([](FakeBluetoothConnector& fake, const CommandSerializer::Message& msg) {
+		if (msg.dataType == DATA_TYPE::ACK)
+			return;
+		if (toHex(msg.messageBytes) == "00 00")
+			return;   // never acknowledged
+		fake.enqueueAck(msg.seqNumber);
+	});
+	f.start(std::chrono::milliseconds(200));
+
+	CHECK_THROWS(f.hp.queryState(), RecoverableException);
+	CHECK_MSG(f.fake().sentCommands().size() == 1, "nothing more is tried on a link that cannot be used");
+}
+
+// A request the device ignores still gets its ACK: the handshake carries on past it.
+TEST(lifecycle_handshake_continues_past_requests_the_device_does_not_answer)
+{
+	EngineFixture f;
+	f.start(std::chrono::milliseconds(200));   // the fake ACKs everything and answers nothing
+
+	f.hp.queryState();
+	CHECK(wasSent(f.fake(), "00 00"));
+	CHECK(wasSent(f.fake(), "06 01"));
+	CHECK(wasSent(f.fake(), "66 02"));
+}
+
 TEST(lifecycle_remote_close_ends_the_session_once)
 {
 	EngineFixture f;

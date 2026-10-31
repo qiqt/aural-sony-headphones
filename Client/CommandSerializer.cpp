@@ -463,7 +463,7 @@ namespace CommandSerializer
 
 	bool isBooleanGeneralSetting(const GeneralSettingCapability& cap)
 	{
-		return cap.settingType == v1::GS_TYPE_BOOLEAN && cap.typeSpecificBytes == 0;
+		return cap.settingType == v1::GS_TYPE_BOOLEAN;
 	}
 
 	std::optional<AvailabilityReport> parseGeneralSettingAvailability(const Message& msg)

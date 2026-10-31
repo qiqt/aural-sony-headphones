@@ -487,6 +487,58 @@ TEST(controller_multipoint_change_is_checked_after_the_headphones_reconnect)
 	CHECK(toldTheOutcome);
 }
 
+// Seen on a WH-1000XM4 after accepting a multipoint change: the first reconnect attempt failed,
+// and the next link opened but the headphones sent start-up notifications without acknowledging
+// the INIT. The check has to ride through both and still read the setting.
+TEST(controller_multipoint_check_survives_a_failed_connect_and_a_silent_handshake)
+{
+	ControllerFixture f;
+	MultipointHeadset headset;
+	headset.s->value = 1;
+	headset.s->dropOnAccept = true;
+	auto behave = headset.script();
+	f.fake->setScript([behave](FakeBluetoothConnector& device, const CommandSerializer::Message& msg) {
+		if (device.connectCount() == 2 && msg.dataType != DATA_TYPE::ACK && toHex(msg.messageBytes) == "00 00")
+		{
+			device.enqueueData(replies::hex("A5 01 00 02"));   // what the XM4 sent instead of the ACK
+			return;
+		}
+		behave(device, msg);
+	});
+	QSignalSpy toasts(f.hp.get(), &HeadphonesController::toast);
+	QSignalSpy errors(f.hp.get(), &HeadphonesController::errorOccurred);
+
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	auto mode = [&] { return f.hp->multipointMode(); };
+	CHECK(spinUntil([&] { return mode().value("phase").toString() == "ready"; }));
+
+	f.hp->setMultipointEnabled(false);
+	CHECK(spinUntil([&] { return f.hp->multipointAlert().value("messageId").toInt() == 7; }));
+	f.hp->answerMultipointAlert(7, true);
+	CHECK(spinUntil([&] { return !f.hp->connected(); }));
+	f.fake->failConnect(true);
+	CHECK_MSG(spinUntil([&] { return f.fake->connectAttempts() == 2; }, std::chrono::milliseconds(5000)),
+		"the first reconnect attempt");
+	f.fake->failConnect(false);
+
+	CHECK_MSG(spinUntil([&] { return f.fake->connectCount() == 3 && f.hp->connected(); },
+		std::chrono::milliseconds(20000)), "a third link after the silent one");
+	CHECK_MSG(spinUntil([&] {
+		return mode().value("phase").toString() == "ready" && mode().value("step").toString() == "idle"
+			&& f.hp->reconnectReason().isEmpty();
+	}, std::chrono::milliseconds(5000)), "the check should end once the setting is read");
+	CHECK_EQ(mode().value("checked").toBool(), false);
+	CHECK_EQ(mode().value("status").toString().toStdString(), std::string("confirmed"));
+	CHECK_EQ(headset.value(), 0);
+	CHECK_EQ(errors.count(), 0);
+
+	bool toldTheOutcome = false;
+	for (const auto& args : toasts)
+		toldTheOutcome = toldTheOutcome || args.at(0).toString() == QStringLiteral("Multipoint is now off.");
+	CHECK(toldTheOutcome);
+}
+
 TEST(controller_multipoint_cancel_keeps_the_headphones_setting)
 {
 	ControllerFixture f;
@@ -519,6 +571,54 @@ TEST(controller_multipoint_cancel_keeps_the_headphones_setting)
 	CHECK(f.hp->connected());
 	CHECK(f.hp->reconnectReason().isEmpty());
 	CHECK_EQ(headset.value(), 0);
+}
+
+// Seen on a WH-1000XM4: the first command on a new link went unacknowledged, and the app showed
+// "Connected" over a dead link until the user changed noise cancelling. The failed handshake now
+// ends that session at once, and Aural reconnects once on a fresh link - which is what worked.
+TEST(controller_unanswered_handshake_reconnects_once)
+{
+	ControllerFixture f;
+	f.fake->setScript([](FakeBluetoothConnector& fake, const CommandSerializer::Message& msg) {
+		if (msg.dataType == DATA_TYPE::ACK)
+			return;
+		if (fake.connectCount() == 1 && toHex(msg.messageBytes) == "00 00")
+			return;   // the first link leaves the INIT unacknowledged
+		fake.enqueueAck(msg.seqNumber);
+	});
+	QSignalSpy errors(f.hp.get(), &HeadphonesController::errorOccurred);
+
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK_MSG(spinUntil([&] { return f.fake->connectCount() == 2 && countSent(*f.fake, "06 01") >= 1; },
+		std::chrono::milliseconds(10000)), "the failed handshake should be followed by one fresh connection");
+	CHECK(spinUntil([&] { return f.hp->connected(); }));
+	spinFor(std::chrono::milliseconds(300));
+	CHECK(f.hp->connected());
+	CHECK_EQ(f.fake->connectCount(), 2);
+	CHECK_EQ(errors.count(), 0);
+}
+
+TEST(controller_handshake_that_fails_twice_is_reported)
+{
+	ControllerFixture f;
+	f.fake->setScript([](FakeBluetoothConnector& fake, const CommandSerializer::Message& msg) {
+		if (msg.dataType == DATA_TYPE::ACK)
+			return;
+		if (toHex(msg.messageBytes) == "00 00")
+			return;   // never acknowledged
+		fake.enqueueAck(msg.seqNumber);
+	});
+	QSignalSpy errors(f.hp.get(), &HeadphonesController::errorOccurred);
+
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK_MSG(spinUntil([&] { return errors.count() > 0; }, std::chrono::milliseconds(15000)),
+		"a second failed handshake should be reported");
+	CHECK(errors.at(0).at(0).toString().contains(QStringLiteral("didn't respond")));
+	CHECK(!f.hp->connected());
+	spinFor(std::chrono::milliseconds(2500));
+	CHECK_MSG(f.fake->connectCount() == 2, "one automatic retry, not a loop");
 }
 
 int main(int argc, char* argv[])

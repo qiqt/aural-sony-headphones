@@ -13,6 +13,7 @@
 #include "backend/HeadphonesController.h"
 #include "backend/PlatformWindow.h"
 #include "backend/TrayController.h"
+#include "ProtocolTrace.h"
 
 int main(int argc, char* argv[])
 {
@@ -32,6 +33,8 @@ int main(int argc, char* argv[])
     const QStringList bodyFams = QFontDatabase::applicationFontFamilies(bodyId);
     const QString bodyFamily = bodyFams.isEmpty() ? QStringLiteral("Manrope") : bodyFams.first();
     qDebug() << "[Aural] build:" << BuildInfo::summary();
+    // Ties a protocol trace (AURAL_TRACE) to the exact build that wrote it.
+    ProtocolTrace::line("Aural " + BuildInfo::summary().toStdString());
     qDebug() << "[Aural] body font:" << bodyFamily;
     QFont appFont(bodyFamily);
     appFont.setItalic(false);

@@ -6,6 +6,7 @@
 
 #include "HeadphonesController.h"
 #include "Exceptions.h"
+#include "ProtocolTrace.h"
 
 #include <QDebug>
 
@@ -75,6 +76,10 @@ constexpr qint64 RECONNECT_RETRY_MS = 3000;
 constexpr qint64 RECONNECT_GIVE_UP_MS = 60000;
 //   Back on the headphones: reading the multipoint value.
 constexpr qint64 VERIFY_TIMEOUT_MS = 15000;
+
+// A WH-1000XM4 once left the first command on a new link unacknowledged; a fresh connection a
+// few seconds later answered at once. A failed handshake is retried once after this pause.
+constexpr qint64 HANDSHAKE_RETRY_DELAY_MS = 1500;
 
 // A discovered control as QML sees it; the keys are documented on the touchPanel property.
 QVariantMap toggleMap(const ToggleSnapshot& t)
@@ -146,6 +151,26 @@ QVariantMap alertMap(const MultipointChange& c)
     m["turningOn"] = c.alert->messageId == v1::ALERT_MSG_MULTIPOINT_TO_ON;
     m["choice"] = c.alert->actionType == v1::ALERT_ACTION_POSITIVE_NEGATIVE;
     return m;
+}
+
+// For the protocol trace: a discovered control's state in words, logged when it changes.
+void traceControl(const char* name, const QVariantMap& before, const QVariantMap& after)
+{
+    if (!ProtocolTrace::enabled())
+        return;
+    auto describe = [](const QVariantMap& m) {
+        QString s = m.value("phase").toString();
+        if (m.value("valueKnown").toBool())
+            s += m.value("checked").toBool() ? QStringLiteral(", on") : QStringLiteral(", off");
+        s += QStringLiteral(", ") + m.value("status").toString();
+        const QString step = m.value("step").toString();
+        if (!step.isEmpty() && step != QStringLiteral("idle"))
+            s += QStringLiteral(", ") + step;
+        return s;
+    };
+    const QString now = describe(after);
+    if (describe(before) != now)
+        ProtocolTrace::line(std::string("   UI: ") + name + " " + now.toStdString());
 }
 
 // Demo mode has no engine behind it: a described, available control the device "confirmed".
@@ -407,6 +432,23 @@ QString HeadphonesController::limitedControlReason()
 }
 
 
+// For the protocol trace: what this connection offers, logged whenever the capabilities move.
+// Tells "the control was withdrawn" apart from "the write went out and was ignored".
+void HeadphonesController::traceOffer()
+{
+    if (!ProtocolTrace::enabled())
+        return;
+    const auto yn = [](bool b) { return b ? std::string("yes") : std::string("no"); };
+    const Buffer ids(_cFunctions.begin(), _cFunctions.end());
+    ProtocolTrace::line(std::string("   UI: capabilities ") + (_cCapsKnown ? "known" : "not known") +
+        ", advertised [" + ProtocolTrace::hex(ids) + "]" +
+        "; offers ambient " + yn(ambientAvailable()) + ", equalizer " + yn(equalizerAvailable()) +
+        ", spatial " + yn(spatialAvailable()) + ", speak-to-chat " + yn(supportsSpeakToChat()) +
+        ", DSEE " + yn(dseeAvailable()) + ", voice guidance " + yn(voiceGuidanceAvailable()) +
+        ", auto power-off " + yn(autoPowerOffAvailable()) + ", device list " + yn(supportsMultipoint()) +
+        "; model " + (_identity.recognised ? "recognised" : "not recognised"));
+}
+
 bool HeadphonesController::focusOnVoiceAvailable()
 {
     if (_demo) return true;
@@ -443,8 +485,13 @@ void HeadphonesController::setAmbientMode(int m)
 {
     // Guarded here as well as in QML: the tray menu and any stale binding come through the
     // same door, and a gated control must not reach the wire by a side route (SON-11).
-    if (!ambientAvailable()) return;
+    if (!ambientAvailable())
+    {
+        ProtocolTrace::line("   UI: ambient mode change refused: not offered on this connection");
+        return;
+    }
     if (m < 0 || m > 2 || _ambientMode == m) return;
+    ProtocolTrace::line("   UI: ambient mode -> " + std::to_string(m) + " (0 NC, 1 ambient, 2 off)");
     _ambientMode = m;
     pushAmbient();
     emit ambientChanged();
@@ -650,6 +697,8 @@ void HeadphonesController::setTouchPanelEnabled(bool on)
     if (!connected() || _protocol != SonyProtocol::V1) return;
     if (_headphones.setTouchPanel(on))
         syncControls();
+    else
+        ProtocolTrace::line("   UI: touch panel change refused: not described, unavailable, or value unread");
 }
 
 void HeadphonesController::setWearingControlEnabled(bool on)
@@ -663,6 +712,8 @@ void HeadphonesController::setWearingControlEnabled(bool on)
     if (!connected() || _protocol != SonyProtocol::V1) return;
     if (_headphones.setWearingControl(on))
         syncControls();
+    else
+        ProtocolTrace::line("   UI: wearing control change refused: not described, unavailable, or value unread");
 }
 
 void HeadphonesController::syncControls()
@@ -671,6 +722,8 @@ void HeadphonesController::syncControls()
     const QVariantMap wearing = toggleMap(_headphones.getWearingControl());
     if (touch == _touchPanel && wearing == _wearingControl)
         return;
+    traceControl("touch panel", _touchPanel, touch);
+    traceControl("wearing control", _wearingControl, wearing);
     _touchPanel = touch;
     _wearingControl = wearing;
     emit controlsChanged();
@@ -702,6 +755,8 @@ void HeadphonesController::setMultipointEnabled(bool on)
     if (!connected() || _protocol != SonyProtocol::V1 || _mpReconnect) return;
     if (_headphones.setMultipointMode(on))
         syncMultipoint();
+    else
+        ProtocolTrace::line("   UI: multipoint change refused: not ready, or another change is in progress");
 }
 
 void HeadphonesController::answerMultipointAlert(int messageId, bool accept)
@@ -790,6 +845,7 @@ void HeadphonesController::syncMultipoint()
     }
     if (map != _multipointMode)
     {
+        traceControl("multipoint mode", _multipointMode, map);
         _multipointMode = map;
         emit controlsChanged();
     }
@@ -925,7 +981,37 @@ void HeadphonesController::connectTo(const QString& mac, const QString& name)
         _mpReconnect.reset();
         emit reconnectChanged();
     }
+    // A connection the user starts is a first attempt, with its own retry.
+    _retryConnect.reset();
+    _handshakeRetried = false;
     startConnect(mac, name);
+}
+
+void HeadphonesController::handshakeFailed(const QString& reason)
+{
+    // Checking a multipoint change already reconnects on its own schedule.
+    if (_mpReconnect)
+    {
+        endSessionAfterLinkLoss(reason);
+        return;
+    }
+
+    const BluetoothDevice device = _device;
+    teardownConnection();
+    if (!_handshakeRetried && !device.mac.empty())
+    {
+        _handshakeRetried = true;
+        _retryConnect = RetryConnect{ device, nowMs() + HANDSHAKE_RETRY_DELAY_MS };
+        ProtocolTrace::line("   UI: the headphones did not answer the handshake (" + reason.toStdString() +
+            "); reconnecting once");
+        emit toast(tr("The headphones didn't answer. Reconnecting..."));
+    }
+    else
+    {
+        _handshakeRetried = false;
+        emit errorOccurred(tr("The headphones didn't respond. Make sure they're connected in Windows, then try again."));
+    }
+    refreshDevices();
 }
 
 void HeadphonesController::startConnect(const QString& mac, const QString& name)
@@ -955,6 +1041,8 @@ void HeadphonesController::disconnectDevice()
         _mpReconnect.reset();
         emit reconnectChanged();
     }
+    _retryConnect.reset();
+    _handshakeRetried = false;
     teardownConnection();
     refreshDevices();
 }
@@ -1091,6 +1179,8 @@ void HeadphonesController::pump()
         setSyncing(false);
         bool wasSettingsPush = _settingsPushPending;
         _settingsPushPending = false;
+        const bool wasHandshake = _handshakePending;
+        _handshakePending = false;
         try
         {
             _commandFuture.get();
@@ -1098,12 +1188,17 @@ void HeadphonesController::pump()
             // read-back reply can promote a setting to confirmed (see settingStatus).
             if (!stale && wasSettingsPush)
                 emit toast("Settings sent");
+            // A handshake that went through: a later failure earns its own retry.
+            if (!stale && wasHandshake)
+                _handshakeRetried = false;
         }
         catch (const RecoverableException& exc)
         {
             if (!stale)
             {
-                if (exc.shouldDisconnect)
+                if (exc.shouldDisconnect && wasHandshake)
+                    handshakeFailed(QString::fromUtf8(exc.what()));
+                else if (exc.shouldDisconnect)
                     endSessionAfterLinkLoss(QStringLiteral("Disconnected due to: ") + exc.what());
                 else
                     emit errorOccurred(exc.what());
@@ -1145,6 +1240,14 @@ void HeadphonesController::pump()
     {
         if (_protocol == SonyProtocol::V1) pollOsBattery();
         emitLiveDeltas();
+    }
+
+    // The one automatic retry after a failed handshake, once its pause is over.
+    if (_retryConnect && !_bt.isConnected() && !_connectFuture.valid() && nowMs() >= _retryConnect->atMs)
+    {
+        const BluetoothDevice device = _retryConnect->device;
+        _retryConnect.reset();
+        startConnect(QString::fromStdString(device.mac), QString::fromStdString(device.name));
     }
 
     driveMultipointReconnect();
@@ -1216,6 +1319,7 @@ void HeadphonesController::emitLiveDeltas()
         _cCapsKnown = capsKnown;
         _cFunctions = std::move(functions);
         emit capabilitiesChanged();
+        traceOffer();
     }
 
     bool opt = _headphones.getOptimizerState() == OPTIMIZER_STATE::OPTIMIZING;
@@ -1358,6 +1462,7 @@ void HeadphonesController::handleConnectionSetup()
     {
         setSyncing(true);
         _commandSession = _session;
+        _handshakePending = true;
         _commandFuture.setFromAsync([this]() { _headphones.queryState(); });
     }
 }
@@ -1413,6 +1518,7 @@ void HeadphonesController::resetUiState()
     _osBatteryLevel = -1;
     _wantBattery = false;
     _settingsPushPending = false;
+    _handshakePending = false;
     _optimizeRequested = false;
 
     _device = BluetoothDevice{ "", "" };

@@ -135,11 +135,15 @@ ApplicationWindow {
                 Repeater {
                     model: win.navItems
                     delegate: NavItem {
+                        // With no headphones connected, the first entry is the way back to the
+                        // device list (screens 0-5 show it then). Without it, System and About
+                        // were a dead end.
+                        readonly property bool devicesEntry: modelData.screen === 0 && !Hp.connected
                         Layout.fillWidth: true
-                        label: modelData.label
-                        iconName: modelData.icon
+                        label: devicesEntry ? "Devices" : modelData.label
+                        iconName: devicesEntry ? "headset" : modelData.icon
                         selected: win.currentScreen === modelData.screen
-                        enabled: Hp.connected && !Hp.isV2 && win.capEnabled(modelData.cap)
+                        enabled: modelData.screen === 0 || (Hp.connected && !Hp.isV2 && win.capEnabled(modelData.cap))
                         onClicked: win.currentScreen = modelData.screen
                     }
                 }

@@ -358,7 +358,8 @@ public:
 	void setChanges();
 
 	// Run the v1 connect handshake (init, then request the state we care about).
-	// Replies arrive asynchronously and are applied via setStateFromReply().
+	// Replies arrive asynchronously and are applied via setStateFromReply(). Throws when the
+	// headphones leave a command unacknowledged: the session cannot continue after that.
 	void queryState();
 
 	// Follow-up requests that replies made necessary (capability details, availability and value
