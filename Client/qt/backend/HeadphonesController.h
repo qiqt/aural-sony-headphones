@@ -10,6 +10,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <optional>
 
 #include "BluetoothWrapper.h"
 #include "Headphones.h"
@@ -81,8 +82,9 @@ class HeadphonesController : public QObject
 
     // Per-setting status: "unknown" | "requested" | "acknowledged" | "confirmed" | "failed".
     // Keys: ambient, equalizer, spatial, speakToChat, dsee, voiceGuidance, autoPowerOff,
-    // optimizer, multipoint, touchPanel, wearingControl. An "acknowledged" setting was received
-    // by the headphones; only "confirmed" means the device reported that value back.
+    // optimizer, multipoint (paired-device operations), touchPanel, wearingControl,
+    // multipointMode (the on/off setting). An "acknowledged" setting was received by the
+    // headphones; only "confirmed" means the device reported that value back.
     Q_PROPERTY(QVariantMap settingStatus READ settingStatus NOTIFY settingStatusChanged)
 
     // Ambient Sound. ambientMode: 0 = Noise Cancelling, 1 = Ambient Sound, 2 = Off.
@@ -140,6 +142,20 @@ class HeadphonesController : public QObject
     // reading of whether the headphones are being worn.
     Q_PROPERTY(QVariantMap touchPanel READ touchPanel NOTIFY controlsChanged)
     Q_PROPERTY(QVariantMap wearingControl READ wearingControl NOTIFY controlsChanged)
+
+    // Multipoint mode, the setting that lets the headphones hold two connections. The same keys,
+    // plus:
+    //   step   "idle" | "sending" | "waiting" | "confirming" | "answering" | "applying" | "verifying"
+    //   busy   a change is in progress; the switch takes no other until it ends
+    //   note   what the change is waiting for, in words; empty when idle
+    // A change can need the user's consent (multipointAlert) and can make the headphones drop the
+    // connection to apply it. Aural then reconnects and reads the value; it never resends it.
+    Q_PROPERTY(QVariantMap multipointMode READ multipointMode NOTIFY controlsChanged)
+    // The confirmation the headphones asked for, or an empty map. Keys: messageId (quote it back
+    // in answerMultipointAlert), turningOn, choice (true: accept or cancel; false: acknowledge only).
+    Q_PROPERTY(QVariantMap multipointAlert READ multipointAlert NOTIFY multipointAlertChanged)
+    // Non-empty while Aural is reconnecting on its own to check a multipoint change, and says so.
+    Q_PROPERTY(QString reconnectReason READ reconnectReason NOTIFY reconnectChanged)
 
     // Multipoint
     Q_PROPERTY(QVariantList mpDevices READ mpDevices NOTIFY multipointChanged)
@@ -229,6 +245,16 @@ public:
     Q_INVOKABLE void setTouchPanelEnabled(bool on);
     Q_INVOKABLE void setWearingControlEnabled(bool on);
 
+    QVariantMap multipointMode() const { return _multipointMode; }
+    QVariantMap multipointAlert() const { return _multipointAlert; }
+    QString reconnectReason() const;
+    // Ignored unless the phase is "ready" and no change is in progress.
+    Q_INVOKABLE void setMultipointEnabled(bool on);
+    // The user's answer to multipointAlert. Ignored unless messageId is the alert's own.
+    Q_INVOKABLE void answerMultipointAlert(int messageId, bool accept);
+    // Stop reconnecting on our own; the device list comes back.
+    Q_INVOKABLE void cancelReconnect();
+
     QVariantList mpDevices() const { return _mpDevices; }
 
     Q_INVOKABLE void refreshDevices();
@@ -256,6 +282,8 @@ signals:
     void s2cChanged();
     void systemChanged();
     void controlsChanged();
+    void multipointAlertChanged();
+    void reconnectChanged();
     void multipointChanged();
     void errorOccurred(const QString& message);
     void toast(const QString& message);
@@ -270,15 +298,24 @@ private:
     bool functionAvailable(FUNCTION_TYPE fn);
     void pump();
     void handleConnectionSetup();
-    void teardownConnection();
+    void teardownConnection(MultipointChange* changeAtEnd = nullptr);
     void resetUiState();
     void pollOsBattery();
     void emitLiveDeltas();
     // Copy values the device reported into the UI state. Skips a setting while a user change
     // to it is still waiting to be sent, so a notification cannot snap the control back.
     void syncReadBack(const SettingsStatus& statuses);
-    // Re-read the discovered controls; emits controlsChanged when either map moved.
+    // Re-read the discovered controls; emits controlsChanged when a map moved.
     void syncControls();
+    // Follow the multipoint change: its map and alert, how it ended, and its timeout.
+    void syncMultipoint();
+    // The link went away underneath us (the reader saw it close, or a send failed). If a
+    // multipoint change was out, that may be the headphones applying it: reconnect and check.
+    void endSessionAfterLinkLoss(const QString& message);
+    // Reconnect attempts and verification for a multipoint change that outlived its session.
+    void driveMultipointReconnect();
+    void finishMultipointReconnect(const QString& message);
+    void startConnect(const QString& mac, const QString& name);
     void refreshSettingStatus();
     void setConn(Conn c);
     void setSyncing(bool s);
@@ -373,6 +410,27 @@ private:
     // Built from the engine's snapshots (see syncControls); never edited from the UI side.
     QVariantMap _touchPanel;
     QVariantMap _wearingControl;
+    QVariantMap _multipointMode;
+    QVariantMap _multipointAlert;
+
+    // The multipoint change as last seen, to tell how it ended and how long it has waited.
+    MultipointStep _mpLastStep = MultipointStep::None;
+    bool _mpLastRequested = false;
+    qint64 _mpStepSinceMs = 0;
+    bool _mpCancelled = false;   // the user answered the alert with Cancel
+    bool _mpAbandoned = false;   // we stopped waiting for the headphones
+
+    // A multipoint change that was out when the link dropped. Outlives the session on purpose:
+    // it is what makes Aural reconnect to the same headphones and read the value.
+    struct MultipointReconnect
+    {
+        BluetoothDevice device;
+        bool requested = false;
+        qint64 startedMs = 0;
+        qint64 nextAttemptMs = 0;
+        qint64 connectedMs = -1;   // when the new session came up; -1 while reconnecting
+    };
+    std::optional<MultipointReconnect> _mpReconnect;
 
     QVariantList _mpDevices;
 

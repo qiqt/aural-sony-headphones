@@ -82,6 +82,35 @@ Confirmed only once that read answers, and a value the device did not apply repl
 on screen. A request still pending when the session ends is dropped, not replayed after
 reconnect. Writes after reconnect go to whichever slot the new discovery reports.
 
+## Multipoint mode
+
+The multipoint on/off setting, on the System screen. This is separate from the paired-device list
+on Connected Devices (table-2 `36`–`39`), whose connect/disconnect commands do not turn the mode
+on or off. None of this flow has been run against a headset.
+
+| Message | Evidence | Notes |
+|---|---|---|
+| `D8 slot 01 v` | APK, Test | `slot` is the one whose `D1` named `MULTIPOINT_SETTING`. Same gate as the touch panel, plus two more conditions. The host must have installed alert handling: the Qt app does, and the legacy ImGui client never changes multipoint. And only one change can be in progress at a time. |
+| `94 01 00` | APK, Test | Enables fixed-message alerts (CommonStatus.ENABLE). Sent once per session, immediately before the first multipoint write. Sound Connect sends it at connect; Aural waits, so the headset is not asked to send alerts until Aural needs one. |
+| `99 01 id action` | APK, Test | `06` means turning multipoint on (Sony shows its LDAC caution for this one); `07` means turning it off. Action `00` asks only for acknowledgement; `01` offers accept or cancel. An alert is acted on only while this session's write is out, and only if it matches the requested direction. Any other alert is left unanswered: another message ID, no change out, the opposite direction, or a change already answered. |
+| `98 01 id choice` | APK, Test | The user's answer, quoting the ID that was received. `01` accepts and `00` cancels; Escape also cancels, as closing Sony's dialog does. Never sent without an alert and a choice from the user. |
+
+A change moves through these steps: requested → written → confirming (the alert is on screen) →
+answered → accepted. It ends in one of four ways:
+
+- The device reports the requested value in `D7`/`D9`. This is the only way it is confirmed.
+- The user cancels.
+- The headphones neither ask nor report for 20 s. Aural stops waiting and rereads the value.
+- The session ends.
+
+A report of the old value does not end a change, because the device may be about to ask, or about
+to drop the link to apply it. If the link drops while a change is out (written, being confirmed,
+answered or accepted), Aural reconnects to the same headphones through the normal connection
+path. It makes its first attempt after 1.5 s, retries every 3 s, and gives up after 60 s. It then
+rediscovers the setting and reads it, and says whether the headphones applied the change. It never
+resends the change or the answer. If the user disconnects, cancels the reconnect, or picks other
+headphones, the check stops. None of these timings have been measured on hardware.
+
 ## XM4 hardware pass
 
 Not yet run. To be completed on a WH-1000XM4 before any APK-only behaviour is described as
@@ -104,3 +133,15 @@ working:
 8. Wearing control: turn it off and on in Aural and capture `F8 03 00 v` → ACK → `F7 03 00 v`.
    Record what the headset actually does differently (pausing on removal, and anything else),
    so the label can describe it.
+9. Multipoint, with two source devices paired:
+   - Confirm the slot from step 3, then turn multipoint on in Aural.
+   - Capture `94 01 00`, then `D8 slot 01 01` → ACK → `99 01 06 a`, and record the action type `a`.
+   - Accept, and capture `98 01 06 01`. Record whether and when the link drops.
+   - Check that Aural reconnects on its own and reports the value it reads afterwards. Check
+     whether LDAC was switched off.
+   - Repeat turning it off (`07`). Then repeat once more and press Cancel: expect `98 01 06 00`
+     and no change.
+   - Note any alert other than `06`/`07` that the headset sends once alerts are enabled.
+10. Time how long the headset takes to answer the write, to drop the link, and to come back.
+    Compare these with Aural's limits (20 s waiting for an answer, 60 s reconnecting, 15 s to read
+    the value).

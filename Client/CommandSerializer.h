@@ -70,6 +70,14 @@ namespace CommandSerializer
 	// F8 03 00 value: wearing control, ProtocolSettingType.ON_OFF.
 	Buffer serializeWearingControl(bool enabled);
 
+	// 94 01 00: ask the device to send fixed-message alerts (CommonStatus.ENABLE). Only once the
+	// host can show an alert and answer it.
+	Buffer serializeAlertEnable();
+	// 98 01 id choice: the answer to a multipoint alert, echoing the message ID the device sent.
+	// Throws std::invalid_argument for any other message ID: there is no answer to compose
+	// for an alert that was never decoded.
+	Buffer serializeMultipointAlertResponse(unsigned char messageId, bool accept);
+
 	// ---- discovery and read queries (table 1 / DATA_MDR unless noted) ------------------------
 	Buffer serializeNcAsmQuery();                                      // 66 02
 	Buffer serializeEqualizerQuery();                                  // 56 01
@@ -221,5 +229,19 @@ namespace CommandSerializer
 		unsigned char selectedTimeElement = 0;
 	};
 	std::optional<AutoPowerOffReport> parseAutoPowerOff(const Message& msg);
+
+	// 99 01 id action: the device asks the user to confirm a multipoint change. Only the two
+	// multipoint message IDs are decoded; every other fixed message is not ours to answer.
+	struct MultipointAlert
+	{
+		unsigned char messageId = 0;    // ALERT_MSG_MULTIPOINT_TO_ON (06) / _TO_OFF (07)
+		unsigned char actionType = 0;   // 00 confirmation only, 01 accept or cancel
+
+		bool operator==(const MultipointAlert& o) const
+		{
+			return messageId == o.messageId && actionType == o.actionType;
+		}
+	};
+	std::optional<MultipointAlert> parseMultipointAlert(const Message& msg);
 }
 

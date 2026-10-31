@@ -93,6 +93,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             visible: Hp.touchPanel.phase !== "absent" || Hp.wearingControl.phase !== "absent"
+                     || Hp.multipointMode.phase !== "absent"
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: ctlCol.implicitHeight + 2 * Theme.lg
             ColumnLayout {
@@ -112,6 +113,14 @@ Item {
                     summary: "Let the headphones respond when you put them on or take them off."
                     control: Hp.wearingControl
                     onToggled: (on) => Hp.setWearingControlEnabled(on)
+                }
+                DeviceToggleRow {
+                    title: "Multipoint"
+                    // The headphones may ask for confirmation (MultipointConfirmDialog in Main)
+                    // and disconnect to apply the change; Aural then reconnects and reads it.
+                    summary: "Stay connected to two devices at once. Changing this can disconnect the headphones for a moment."
+                    control: Hp.multipointMode
+                    onToggled: (on) => Hp.setMultipointEnabled(on)
                 }
             }
         }

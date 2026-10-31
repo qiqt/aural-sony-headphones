@@ -438,6 +438,89 @@ TEST(controller_discovered_controls_follow_the_device)
 	CHECK_EQ(f.hp->settingStatus().value("touchPanel").toString().toStdString(), std::string("unknown"));
 }
 
+// Multipoint mode: the headphones ask, the user accepts, the headphones drop the link to apply it.
+// Aural reconnects on its own and reads the value. It never resends the change or the answer.
+TEST(controller_multipoint_change_is_checked_after_the_headphones_reconnect)
+{
+	ControllerFixture f;
+	MultipointHeadset headset;
+	headset.s->dropOnAccept = true;
+	headset.installOn(*f.fake);
+	QSignalSpy toasts(f.hp.get(), &HeadphonesController::toast);
+
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	auto mode = [&] { return f.hp->multipointMode(); };
+	CHECK(spinUntil([&] { return mode().value("phase").toString() == "ready"; }));
+	CHECK_EQ(mode().value("checked").toBool(), false);
+
+	f.hp->setMultipointEnabled(true);
+	CHECK_EQ(mode().value("busy").toBool(), true);
+	CHECK_MSG(spinUntil([&] { return f.hp->multipointAlert().value("messageId").toInt() == 6; }),
+		"the headphones' confirmation should reach the UI");
+	CHECK_EQ(f.hp->multipointAlert().value("turningOn").toBool(), true);
+	CHECK_EQ(f.hp->multipointAlert().value("choice").toBool(), true);
+	CHECK_EQ(mode().value("step").toString().toStdString(), std::string("confirming"));
+	spinFor(std::chrono::milliseconds(200));
+	CHECK_MSG(!wasSent(*f.fake, "98 01 06 01") && !wasSent(*f.fake, "98 01 06 00"), "only the user answers");
+
+	f.hp->answerMultipointAlert(6, true);
+	CHECK(spinUntil([&] { return wasSent(*f.fake, "98 01 06 01"); }));
+	// The link drops to apply the change: Aural says it is reconnecting, not that it failed.
+	CHECK(spinUntil([&] { return !f.hp->connected(); }));
+	CHECK(f.hp->reconnectReason().contains(QStringLiteral("multipoint")));
+	CHECK(f.hp->multipointAlert().isEmpty());
+
+	CHECK_MSG(spinUntil([&] { return f.hp->connected() && f.hp->reconnectReason().isEmpty(); },
+		std::chrono::milliseconds(15000)), "Aural should reconnect on its own");
+	CHECK_MSG(spinUntil([&] {
+		return mode().value("phase").toString() == "ready" && mode().value("step").toString() == "idle";
+	}), "the check should end once the new session has read the value");
+	CHECK_EQ(mode().value("checked").toBool(), true);
+	CHECK_EQ(mode().value("status").toString().toStdString(), std::string("confirmed"));
+	CHECK_EQ(countSent(*f.fake, "D8 D3 01 01"), size_t(1));
+	CHECK_EQ(countSent(*f.fake, "98 01 06 01"), size_t(1));
+
+	bool toldTheOutcome = false;
+	for (const auto& args : toasts)
+		toldTheOutcome = toldTheOutcome || args.at(0).toString() == QStringLiteral("Multipoint is now on.");
+	CHECK(toldTheOutcome);
+}
+
+TEST(controller_multipoint_cancel_keeps_the_headphones_setting)
+{
+	ControllerFixture f;
+	MultipointHeadset headset;
+	headset.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	auto mode = [&] { return f.hp->multipointMode(); };
+	CHECK(spinUntil([&] { return mode().value("phase").toString() == "ready"; }));
+
+	// An alert about a change nobody made is not put in front of the user.
+	f.fake->enqueueData(replies::hex("99 01 06 01"));
+	spinFor(std::chrono::milliseconds(200));
+	CHECK(f.hp->multipointAlert().isEmpty());
+
+	f.hp->setMultipointEnabled(true);
+	CHECK(spinUntil([&] { return !f.hp->multipointAlert().isEmpty(); }));
+	// An answer quoting another message ID goes nowhere.
+	f.hp->answerMultipointAlert(7, true);
+	spinFor(std::chrono::milliseconds(200));
+	CHECK(!wasSent(*f.fake, "98 01 07 01"));
+	CHECK(!f.hp->multipointAlert().isEmpty());
+
+	f.hp->answerMultipointAlert(6, false);
+	CHECK(spinUntil([&] { return wasSent(*f.fake, "98 01 06 00"); }));
+	CHECK(spinUntil([&] {
+		return f.hp->multipointAlert().isEmpty() && mode().value("step").toString() == "idle";
+	}));
+	CHECK_EQ(mode().value("checked").toBool(), false);
+	CHECK(f.hp->connected());
+	CHECK(f.hp->reconnectReason().isEmpty());
+	CHECK_EQ(headset.value(), 0);
+}
+
 int main(int argc, char* argv[])
 {
 	QCoreApplication app(argc, argv);

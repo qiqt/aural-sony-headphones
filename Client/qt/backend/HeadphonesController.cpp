@@ -61,8 +61,20 @@ QVariantMap statusMap(const SettingsStatus& s)
     m["multipoint"] = statusName(s.multipoint);
     m["touchPanel"] = statusName(s.touchPanel);
     m["wearingControl"] = statusName(s.wearingControl);
+    m["multipointMode"] = statusName(s.multipointMode);
     return m;
 }
+
+// Multipoint timing. None of it has been measured on hardware; it bounds how long Aural waits,
+// it does not describe the headset.
+//   A written change the headphones neither confirm, ask about, nor drop the link for.
+constexpr qint64 MULTIPOINT_SILENCE_MS = 20000;
+//   Reconnecting after the headphones dropped the link mid-change.
+constexpr qint64 RECONNECT_FIRST_DELAY_MS = 1500;
+constexpr qint64 RECONNECT_RETRY_MS = 3000;
+constexpr qint64 RECONNECT_GIVE_UP_MS = 60000;
+//   Back on the headphones: reading the multipoint value.
+constexpr qint64 VERIFY_TIMEOUT_MS = 15000;
 
 // A discovered control as QML sees it; the keys are documented on the touchPanel property.
 QVariantMap toggleMap(const ToggleSnapshot& t)
@@ -84,6 +96,55 @@ QVariantMap toggleMap(const ToggleSnapshot& t)
     m["checked"] = pending ? t.requested : t.value;
     m["pending"] = pending;
     m["status"] = statusName(t.status);
+    return m;
+}
+
+QString multipointStepName(MultipointStep step)
+{
+    switch (step)
+    {
+    case MultipointStep::Requested:  return QStringLiteral("sending");
+    case MultipointStep::Sent:       return QStringLiteral("waiting");
+    case MultipointStep::Confirming: return QStringLiteral("confirming");
+    case MultipointStep::Answering:  return QStringLiteral("answering");
+    case MultipointStep::Accepted:   return QStringLiteral("applying");
+    case MultipointStep::None:       break;
+    }
+    return QStringLiteral("idle");
+}
+
+QString multipointNote(MultipointStep step)
+{
+    switch (step)
+    {
+    case MultipointStep::Requested:  return QObject::tr("Sending the change to the headphones...");
+    case MultipointStep::Sent:       return QObject::tr("Waiting for the headphones to respond...");
+    case MultipointStep::Confirming: return QObject::tr("Waiting for your confirmation.");
+    case MultipointStep::Answering:  return QObject::tr("Sending your answer...");
+    case MultipointStep::Accepted:   return QObject::tr("The headphones are applying the change and may disconnect briefly.");
+    case MultipointStep::None:       break;
+    }
+    return QString();
+}
+
+// The touch-panel keys plus where the change stands; documented on the multipointMode property.
+QVariantMap multipointMap(const ToggleSnapshot& t, const MultipointChange& c)
+{
+    QVariantMap m = toggleMap(t);
+    m["step"] = multipointStepName(c.step);
+    m["busy"] = c.step != MultipointStep::None;
+    m["note"] = multipointNote(c.step);
+    return m;
+}
+
+QVariantMap alertMap(const MultipointChange& c)
+{
+    QVariantMap m;
+    if (c.step != MultipointStep::Confirming || !c.alert)
+        return m;
+    m["messageId"] = static_cast<int>(c.alert->messageId);
+    m["turningOn"] = c.alert->messageId == v1::ALERT_MSG_MULTIPOINT_TO_ON;
+    m["choice"] = c.alert->actionType == v1::ALERT_ACTION_POSITIVE_NEGATIVE;
     return m;
 }
 
@@ -168,6 +229,11 @@ void HeadphonesController::init()
     _settingStatus = statusMap(SettingsStatus{});
     _touchPanel = toggleMap(ToggleSnapshot{});
     _wearingControl = toggleMap(ToggleSnapshot{});
+    _multipointMode = multipointMap(ToggleSnapshot{}, MultipointChange{});
+
+    // The UI shows multipoint alerts (MultipointConfirmDialog) and sends the user's answer, so the
+    // engine may enable them on the headphones before a multipoint change.
+    _headphones.installAlertHandling();
 
     _demo = qEnvironmentVariableIsSet("AURAL_DEMO");
     if (_demo)
@@ -199,6 +265,7 @@ void HeadphonesController::init()
         };
         _touchPanel = toggleMap(demoToggle(true));
         _wearingControl = toggleMap(demoToggle(true));
+        _multipointMode = multipointMap(demoToggle(true), MultipointChange{});
 
         // Demo mode is a UI preview, so it also previews the honest status vocabulary: most
         // settings read back as Confirmed, one is still only Sent, one was never read.
@@ -214,6 +281,7 @@ void HeadphonesController::init()
         demoStatus.multipoint = SettingStatus::Confirmed;
         demoStatus.touchPanel = SettingStatus::Confirmed;
         demoStatus.wearingControl = SettingStatus::Confirmed;
+        demoStatus.multipointMode = SettingStatus::Confirmed;
         _settingStatus = statusMap(demoStatus);
         return;
     }
@@ -608,6 +676,221 @@ void HeadphonesController::syncControls()
     emit controlsChanged();
 }
 
+// ---- Multipoint mode ----
+void HeadphonesController::setMultipointEnabled(bool on)
+{
+    if (_demo)
+    {
+        // Preview the confirmation the way the headphones would ask for it.
+        if (_multipointMode.value("busy").toBool() || _multipointMode.value("checked").toBool() == on)
+            return;
+        MultipointChange change;
+        change.step = MultipointStep::Confirming;
+        change.requested = on;
+        change.alert = CommandSerializer::MultipointAlert{
+            on ? v1::ALERT_MSG_MULTIPOINT_TO_ON : v1::ALERT_MSG_MULTIPOINT_TO_OFF, v1::ALERT_ACTION_POSITIVE_NEGATIVE };
+        ToggleSnapshot t = demoToggle(!on);
+        t.requested = on;
+        t.status = SettingStatus::Acknowledged;
+        _multipointMode = multipointMap(t, change);
+        _multipointAlert = alertMap(change);
+        emit controlsChanged();
+        emit multipointAlertChanged();
+        return;
+    }
+    // While Aural is checking an earlier change on its own, that check comes first.
+    if (!connected() || _protocol != SonyProtocol::V1 || _mpReconnect) return;
+    if (_headphones.setMultipointMode(on))
+        syncMultipoint();
+}
+
+void HeadphonesController::answerMultipointAlert(int messageId, bool accept)
+{
+    if (messageId < 0 || messageId > 0xFF) return;
+    if (_demo)
+    {
+        if (_multipointAlert.value("messageId").toInt() != messageId || _multipointAlert.isEmpty()) return;
+        const bool on = _multipointAlert.value("turningOn").toBool();
+        _multipointMode = multipointMap(demoToggle(accept ? on : !on), MultipointChange{});
+        _multipointAlert.clear();
+        emit controlsChanged();
+        emit multipointAlertChanged();
+        emit toast(accept ? (on ? tr("Multipoint is now on.") : tr("Multipoint is now off."))
+                          : tr("Multipoint change cancelled."));
+        return;
+    }
+    // The engine checks the ID against the alert it is holding: an answer to anything else,
+    // including an alert that has since been settled, goes nowhere.
+    if (_headphones.answerMultipointAlert(static_cast<unsigned char>(messageId), accept))
+    {
+        _mpCancelled = !accept;
+        syncMultipoint();
+    }
+}
+
+QString HeadphonesController::reconnectReason() const
+{
+    if (!_mpReconnect || _mpReconnect->connectedMs >= 0)
+        return QString();
+    return tr("Reconnecting to %1 to check the multipoint change...").arg(displayModel(_mpReconnect->device.name));
+}
+
+void HeadphonesController::cancelReconnect()
+{
+    if (!_mpReconnect) return;
+    _mpReconnect.reset();
+    emit reconnectChanged();
+}
+
+void HeadphonesController::syncMultipoint()
+{
+    const MultipointChange change = _headphones.getMultipointChange();
+    const ToggleSnapshot mode = _headphones.getMultipointMode();
+
+    // A change that ended within the session. (One the session ended under is followed up by
+    // endSessionAfterLinkLoss and driveMultipointReconnect instead.)
+    if (_mpLastStep != MultipointStep::None && change.step == MultipointStep::None)
+    {
+        if (_mpCancelled)
+            emit toast(tr("Multipoint change cancelled."));
+        else if (_mpAbandoned)
+            emit toast(tr("The headphones didn't confirm the multipoint change. Showing the setting they report."));
+        else if (mode.valueKnown && mode.value == _mpLastRequested)
+            emit toast(_mpLastRequested ? tr("Multipoint is now on.") : tr("Multipoint is now off."));
+        else if (_mpLastStep == MultipointStep::Requested)
+            emit toast(tr("Multipoint can't be changed right now."));
+        _mpCancelled = false;
+        _mpAbandoned = false;
+    }
+
+    if (change.step != _mpLastStep)
+        _mpStepSinceMs = nowMs();
+    _mpLastStep = change.step;
+    _mpLastRequested = change.requested;
+
+    // Written, and the headphones have neither confirmed it, asked about it, nor dropped the
+    // link for it. Stop waiting and read the value; nothing is resent.
+    if ((change.step == MultipointStep::Sent || change.step == MultipointStep::Accepted) &&
+        nowMs() - _mpStepSinceMs > MULTIPOINT_SILENCE_MS)
+    {
+        _mpAbandoned = true;
+        _headphones.abandonMultipointChange();
+    }
+
+    QVariantMap map = multipointMap(mode, change);
+    if (_mpReconnect && _mpReconnect->connectedMs >= 0)
+    {
+        // Back on the headphones after the link dropped mid-change: until the value is read, the
+        // change is still a request, not a fact.
+        map["step"] = QStringLiteral("verifying");
+        map["busy"] = true;
+        map["pending"] = true;
+        map["checked"] = _mpReconnect->requested;
+        map["note"] = tr("Checking whether the headphones applied the change...");
+    }
+    if (map != _multipointMode)
+    {
+        _multipointMode = map;
+        emit controlsChanged();
+    }
+
+    const QVariantMap alert = alertMap(change);
+    if (alert != _multipointAlert)
+    {
+        _multipointAlert = alert;
+        emit multipointAlertChanged();
+    }
+}
+
+void HeadphonesController::endSessionAfterLinkLoss(const QString& message)
+{
+    const BluetoothDevice device = _device;
+    MultipointChange change;
+    teardownConnection(&change);
+
+    // A change that was out when the link went - written, asked about, answered - may be why
+    // it went: the headphones can drop the connection to apply it. Reconnect and read the value.
+    const bool changeOut = change.step == MultipointStep::Sent || change.step == MultipointStep::Confirming ||
+        change.step == MultipointStep::Answering || change.step == MultipointStep::Accepted;
+    const qint64 now = nowMs();
+    if (_mpReconnect)
+    {
+        // Lost again while checking an earlier change: keep checking, within the same deadline.
+        _mpReconnect->connectedMs = -1;
+        _mpReconnect->nextAttemptMs = now + RECONNECT_FIRST_DELAY_MS;
+        emit reconnectChanged();
+    }
+    else if (changeOut && !device.mac.empty())
+    {
+        _mpReconnect = MultipointReconnect{ device, change.requested, now, now + RECONNECT_FIRST_DELAY_MS, -1 };
+        emit reconnectChanged();
+        emit toast(tr("The headphones disconnected during the multipoint change. Reconnecting to check it..."));
+    }
+    else
+    {
+        emit errorOccurred(message);
+    }
+    refreshDevices();
+}
+
+void HeadphonesController::driveMultipointReconnect()
+{
+    if (!_mpReconnect) return;
+    MultipointReconnect& r = *_mpReconnect;
+    const qint64 now = nowMs();
+
+    if (connected())
+    {
+        if (_device.mac != r.device.mac)
+        {
+            // Other headphones: the change cannot be checked on these.
+            _mpReconnect.reset();
+            emit reconnectChanged();
+            return;
+        }
+        if (r.connectedMs < 0)
+        {
+            r.connectedMs = now;
+            emit reconnectChanged();
+        }
+        // The new session rediscovers the setting and reads it; the old request is not resent.
+        const ToggleSnapshot mode = _headphones.getMultipointMode();
+        if (mode.valueKnown)
+        {
+            if (mode.value == r.requested)
+                finishMultipointReconnect(mode.value ? tr("Multipoint is now on.") : tr("Multipoint is now off."));
+            else
+                finishMultipointReconnect(mode.value ? tr("The headphones kept multipoint on.")
+                                                     : tr("The headphones kept multipoint off."));
+        }
+        else if (mode.support == CapabilityState::Unsupported)
+            finishMultipointReconnect(tr("Couldn't check the multipoint change: the headphones no longer report the setting."));
+        else if (now - r.connectedMs > VERIFY_TIMEOUT_MS)
+            finishMultipointReconnect(tr("Couldn't read the multipoint setting after reconnecting."));
+        return;
+    }
+
+    if (_connectFuture.valid() || _bt.isConnected())
+        return;   // an attempt is under way
+    if (now - r.startedMs > RECONNECT_GIVE_UP_MS)
+    {
+        finishMultipointReconnect(tr("Couldn't reconnect to check the multipoint change. Connect again to see the current setting."));
+        return;
+    }
+    if (now >= r.nextAttemptMs)
+    {
+        r.nextAttemptMs = now + RECONNECT_RETRY_MS;
+        startConnect(QString::fromStdString(r.device.mac), QString::fromStdString(r.device.name));
+    }
+}
+
+void HeadphonesController::finishMultipointReconnect(const QString& message)
+{
+    _mpReconnect.reset();
+    emit reconnectChanged();
+    emit toast(message);
+}
+
 void HeadphonesController::mpDisconnect(int slot)
 {
     if (!supportsMultipoint()) return;
@@ -636,6 +919,17 @@ void HeadphonesController::refreshDevices()
 
 void HeadphonesController::connectTo(const QString& mac, const QString& name)
 {
+    // The user picked other headphones: there is nothing left to check on the old ones.
+    if (_mpReconnect && mac.toStdString() != _mpReconnect->device.mac)
+    {
+        _mpReconnect.reset();
+        emit reconnectChanged();
+    }
+    startConnect(mac, name);
+}
+
+void HeadphonesController::startConnect(const QString& mac, const QString& name)
+{
     if (_connectFuture.valid() || _bt.isConnected()) return;
 
     // A connection attempt is a new session: results from the previous one are stale.
@@ -655,6 +949,12 @@ void HeadphonesController::connectTo(const QString& mac, const QString& name)
 
 void HeadphonesController::disconnectDevice()
 {
+    // The user's disconnect also ends any reconnecting Aural was doing on its own.
+    if (_mpReconnect)
+    {
+        _mpReconnect.reset();
+        emit reconnectChanged();
+    }
     teardownConnection();
     refreshDevices();
 }
@@ -706,9 +1006,7 @@ void HeadphonesController::pump()
     {
         if (_linkLostSession.load() == _session && _conn != Conn::Disconnected)
         {
-            emit errorOccurred("The headphones closed the connection");
-            teardownConnection();
-            refreshDevices();
+            endSessionAfterLinkLoss(QStringLiteral("The headphones closed the connection"));
             return;
         }
     }
@@ -761,12 +1059,14 @@ void HeadphonesController::pump()
                     emit toast("Connected to " + deviceModel());
             }
         }
+        // While reconnecting on its own to check a multipoint change, Aural expects attempts to
+        // fail until the headphones are back; driveMultipointReconnect reports the outcome once.
         catch (const RecoverableException& exc)
         {
             if (!stale)
             {
                 if (exc.shouldDisconnect) _bt.disconnect();
-                emit errorOccurred(exc.what());
+                if (!_mpReconnect) emit errorOccurred(exc.what());
                 setConn(Conn::Disconnected);
                 refreshDevices();
             }
@@ -775,7 +1075,7 @@ void HeadphonesController::pump()
         {
             if (!stale)
             {
-                emit errorOccurred(exc.what());
+                if (!_mpReconnect) emit errorOccurred(exc.what());
                 setConn(Conn::Disconnected);
                 refreshDevices();
             }
@@ -803,9 +1103,10 @@ void HeadphonesController::pump()
         {
             if (!stale)
             {
-                QString prefix;
-                if (exc.shouldDisconnect) { teardownConnection(); refreshDevices(); prefix = "Disconnected due to: "; }
-                emit errorOccurred(prefix + exc.what());
+                if (exc.shouldDisconnect)
+                    endSessionAfterLinkLoss(QStringLiteral("Disconnected due to: ") + exc.what());
+                else
+                    emit errorOccurred(exc.what());
             }
         }
         catch (const std::exception& exc) { if (!stale) emit errorOccurred(exc.what()); }
@@ -846,6 +1147,7 @@ void HeadphonesController::pump()
         emitLiveDeltas();
     }
 
+    driveMultipointReconnect();
     refreshSettingStatus();
 }
 
@@ -929,6 +1231,7 @@ void HeadphonesController::emitLiveDeltas()
 
     syncReadBack(_headphones.getStatuses());
     syncControls();
+    syncMultipoint();
 
     // Multipoint list (device-driven)
     if (supportsMultipoint())
@@ -1061,8 +1364,9 @@ void HeadphonesController::handleConnectionSetup()
 
 // The single place a session ends. Stop the reader, close the socket, drain every
 // outstanding future, then reset device and UI state so nothing survives into the next
-// connection.
-void HeadphonesController::teardownConnection()
+// connection. changeAtEnd, when given, receives the multipoint change as the session left it:
+// read once nothing can move it any more, and before it is forgotten.
+void HeadphonesController::teardownConnection(MultipointChange* changeAtEnd)
 {
     ++_session;
     _linkLost.store(false);
@@ -1092,6 +1396,8 @@ void HeadphonesController::teardownConnection()
     drain(_devicesFuture);
     drain(_osBatteryFuture);
 
+    if (changeAtEnd)
+        *changeAtEnd = _headphones.getMultipointChange();
     _headphones.resetState();
     resetUiState();
 
@@ -1151,6 +1457,15 @@ void HeadphonesController::resetUiState()
     _autoPowerOff = 0;
     _touchPanel = toggleMap(ToggleSnapshot{});
     _wearingControl = toggleMap(ToggleSnapshot{});
+    // The multipoint change ends with the session; a reconnect to check it (_mpReconnect) is
+    // not session state and stays.
+    _multipointMode = multipointMap(ToggleSnapshot{}, MultipointChange{});
+    _multipointAlert.clear();
+    _mpLastStep = MultipointStep::None;
+    _mpLastRequested = false;
+    _mpStepSinceMs = 0;
+    _mpCancelled = false;
+    _mpAbandoned = false;
     _mpDevices.clear();
     _settingStatus = statusMap(SettingsStatus{});
 
@@ -1160,6 +1475,7 @@ void HeadphonesController::resetUiState()
     emit s2cChanged();
     emit systemChanged();
     emit controlsChanged();
+    emit multipointAlertChanged();
     emit multipointChanged();
     emit batteryChanged();
     emit capabilitiesChanged();

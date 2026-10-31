@@ -127,6 +127,7 @@ qt_add_qml_module(appAural
         qml/AboutScreen.qml
         qml/StatusChip.qml
         qml/DeviceToggleRow.qml
+        qml/MultipointConfirmDialog.qml
 )
 
 qt_add_resources(appAural "appfonts"

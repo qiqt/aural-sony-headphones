@@ -286,6 +286,106 @@ private:
 
 inline Buffer DeviceScript::toBytes(const std::string& text) { return replies::hex(text); }
 
+// A headset with multipoint mode in one general-setting slot. It advertises that slot, keeps the
+// value and answers reads. A write is applied at once, ignored, or held while the headset asks for
+// confirmation with a fixed-message alert (after the write's ACK, or before it). An accepted change
+// is then applied and announced with D9, or applied by dropping the link. Every command is ACKed.
+class MultipointHeadset
+{
+public:
+	enum class OnWrite { Apply, Ask, Ignore };
+
+	struct State
+	{
+		std::mutex mtx;
+		unsigned char slot = 0xD3;
+		int value = 0;
+		OnWrite onWrite = OnWrite::Ask;
+		unsigned char actionType = v1::ALERT_ACTION_POSITIVE_NEGATIVE;
+		bool alertBeforeAck = false;
+		bool dropOnAccept = false;
+		int held = -1;   // the value awaiting confirmation
+	};
+	std::shared_ptr<State> s = std::make_shared<State>();
+
+	void installOn(FakeBluetoothConnector& fake)
+	{
+		auto st = s;
+		fake.setScript([st](FakeBluetoothConnector& device, const CommandSerializer::Message& msg) {
+			if (msg.dataType == DATA_TYPE::ACK)
+				return;
+			const std::string req = toHex(msg.messageBytes);
+			std::vector<Buffer> out;
+			bool drop = false;
+			bool before = false;
+			{
+				std::lock_guard<std::mutex> guard(st->mtx);
+				const char slot = static_cast<char>(st->slot);
+				const std::string sl = toHex(Buffer{ slot });
+				auto valueFrame = [&](unsigned char cmd) {
+					return Buffer{ static_cast<char>(cmd), slot, 0x01, static_cast<char>(st->value) };
+				};
+				if (msg.dataType != DATA_TYPE::DATA_MDR)
+				{
+					// Table 2 (paired devices) is ACKed and otherwise ignored.
+				}
+				else if (req == "06 01")
+					out.push_back(Buffer{ 0x07, 0x01, 0x01, slot });
+				else if (req == "D0 " + sl + " 01")
+					out.push_back(replies::generalSettingCapability(st->slot, v1::GS_TITLE_MULTIPOINT));
+				else if (req == "D2 " + sl)
+					out.push_back(Buffer{ static_cast<char>(0xD3), slot, 0x00 });
+				else if (req == "D6 " + sl)
+					out.push_back(valueFrame(0xD7));
+				else if (req == "D8 " + sl + " 01 00" || req == "D8 " + sl + " 01 01")
+				{
+					const int v = req.back() == '1' ? 1 : 0;
+					if (st->onWrite == OnWrite::Apply)
+					{
+						st->value = v;
+						out.push_back(valueFrame(0xD9));
+					}
+					else if (st->onWrite == OnWrite::Ask)
+					{
+						st->held = v;
+						out.push_back(Buffer{ static_cast<char>(0x99), 0x01,
+							static_cast<char>(v ? v1::ALERT_MSG_MULTIPOINT_TO_ON : v1::ALERT_MSG_MULTIPOINT_TO_OFF),
+							static_cast<char>(st->actionType) });
+						before = st->alertBeforeAck;
+					}
+				}
+				else if (req.rfind("98 01 ", 0) == 0)
+				{
+					if (req.back() == '1' && st->held >= 0)
+					{
+						st->value = st->held;
+						if (st->dropOnAccept)
+							drop = true;
+						else
+							out.push_back(valueFrame(0xD9));
+					}
+					st->held = -1;
+				}
+			}
+			if (before)
+				for (const auto& frame : out)
+					device.enqueueData(frame);
+			device.enqueueAck(msg.seqNumber);
+			if (!before)
+				for (const auto& frame : out)
+					device.enqueueData(frame);
+			if (drop)
+				device.closeRemote();
+		});
+	}
+
+	int value()
+	{
+		std::lock_guard<std::mutex> guard(s->mtx);
+		return s->value;
+	}
+};
+
 // Wait until the reader has read and acknowledged every reply the device has sent so far.
 inline bool settle(EngineFixture& f)
 {

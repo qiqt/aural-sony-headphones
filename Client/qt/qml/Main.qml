@@ -338,6 +338,9 @@ ApplicationWindow {
         }
     }
 
+    // Shown whichever screen is open: the headphones ask when they are ready to.
+    MultipointConfirmDialog {}
+
     Toast {
         id: appToast
         anchors.right: parent.right

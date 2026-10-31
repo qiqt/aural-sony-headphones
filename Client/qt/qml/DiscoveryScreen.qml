@@ -39,6 +39,28 @@ Item {
             }
         }
 
+        // Aural reconnecting on its own: the headphones dropped the link during a multipoint
+        // change, and only reading the setting again says whether the change took effect.
+        Rectangle {
+            Layout.fillWidth: true
+            visible: Hp.reconnectReason !== ""
+            radius: Theme.radiusLg; color: Theme.surfaceContainerLow; border.color: Theme.outlineVariant; border.width: 1
+            implicitHeight: reconnectRow.implicitHeight + 2 * Theme.md
+            RowLayout {
+                id: reconnectRow
+                anchors.fill: parent; anchors.margins: Theme.md; spacing: Theme.sm
+                Icon { name: "sync"; size: 18; color: Theme.textSecondary; Layout.alignment: Qt.AlignVCenter }
+                Text {
+                    Layout.fillWidth: true
+                    text: Hp.reconnectReason
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.bodyMd
+                    wrapMode: Text.WordWrap
+                }
+                AuralButton { text: "Stop"; onClicked: Hp.cancelReconnect() }
+            }
+        }
+
         Flow {
             Layout.fillWidth: true
             spacing: Theme.md

@@ -215,6 +215,21 @@ namespace CommandSerializer
 			static_cast<char>(v1::PROTOCOL_SETTING_TYPE_ON_OFF), static_cast<char>(enabled ? 0x01 : 0x00) };
 	}
 
+	Buffer serializeAlertEnable()
+	{
+		return { static_cast<char>(v1::t1::ALERT_SET_STATUS), static_cast<char>(v1::ALERT_FIXED_MESSAGE),
+			static_cast<char>(v1::STATUS_ENABLE) };
+	}
+
+	Buffer serializeMultipointAlertResponse(unsigned char messageId, bool accept)
+	{
+		if (messageId != v1::ALERT_MSG_MULTIPOINT_TO_ON && messageId != v1::ALERT_MSG_MULTIPOINT_TO_OFF)
+			throw std::invalid_argument("not a multipoint alert: answer only the message ID the device sent");
+		return { static_cast<char>(v1::t1::ALERT_SET_PARAM), static_cast<char>(v1::ALERT_FIXED_MESSAGE),
+			static_cast<char>(messageId),
+			static_cast<char>(accept ? v1::ALERT_RESPONSE_POSITIVE : v1::ALERT_RESPONSE_NEGATIVE) };
+	}
+
 	Buffer serializeNcAsmQuery()
 	{
 		return { static_cast<char>(v1::t1::NCASM_GET_PARAM),
@@ -662,6 +677,23 @@ namespace CommandSerializer
 		if (!v1::isAutoPowerOffElement(u8(p, 3)) || !v1::isAutoPowerOffElement(u8(p, 4)))
 			return std::nullopt;
 		return AutoPowerOffReport{ u8(p, 3), u8(p, 4) };
+	}
+
+	std::optional<MultipointAlert> parseMultipointAlert(const Message& msg)
+	{
+		// [99][01 FIXED_MESSAGE][message id][action type]
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 4)
+			return std::nullopt;
+		if (u8(p, 0) != v1::t1::ALERT_NTFY_PARAM || u8(p, 1) != v1::ALERT_FIXED_MESSAGE)
+			return std::nullopt;
+		const unsigned char id = u8(p, 2);
+		const unsigned char action = u8(p, 3);
+		if (id != v1::ALERT_MSG_MULTIPOINT_TO_ON && id != v1::ALERT_MSG_MULTIPOINT_TO_OFF)
+			return std::nullopt;
+		if (action != v1::ALERT_ACTION_CONFIRMATION_ONLY && action != v1::ALERT_ACTION_POSITIVE_NEGATIVE)
+			return std::nullopt;
+		return MultipointAlert{ id, action };
 	}
 
 }

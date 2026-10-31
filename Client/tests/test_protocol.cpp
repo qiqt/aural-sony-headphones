@@ -235,6 +235,31 @@ TEST(protocol_wearing_vectors)
 	CHECK_EQ(toHex(serializeWearingControl(false)), std::string("F8 03 00 00"));
 }
 
+// ---- fixed-message alerts ------------------------------------------------------------------------
+
+TEST(protocol_multipoint_alert_vectors)
+{
+	// multipoint_alert / answer_multipoint_alert in the reference.
+	auto on = parseMultipointAlert(msg("99 01 06 01"));
+	CHECK(on.has_value() && on->messageId == 0x06 && on->actionType == 0x01);
+	auto off = parseMultipointAlert(msg("99 01 07 00"));
+	CHECK(off.has_value() && off->messageId == 0x07 && off->actionType == 0x00);
+
+	CHECK_EQ(toHex(serializeMultipointAlertResponse(0x06, true)), std::string("98 01 06 01"));
+	CHECK_EQ(toHex(serializeMultipointAlertResponse(0x07, false)), std::string("98 01 07 00"));
+	CHECK_EQ(toHex(serializeAlertEnable()), std::string("94 01 00"));
+
+	// Another message, another inquiry, short, an unknown action, long, our own answer echoed.
+	for (const char* text : { "99 01 08 01", "99 02 06 01", "99 01 06", "99 01 06 02", "99 01 06 01 00", "98 01 06 01" })
+		CHECK_MSG(!parseMultipointAlert(msg(text)).has_value(), std::string("must not decode: ") + text);
+	CHECK(!parseMultipointAlert(msg("99 01 06 01", DATA_TYPE::DATA_MDR_NO2)).has_value());
+
+	// There is no answer to compose for a message that is not a multipoint alert.
+	const unsigned char notMultipoint[] = { 0x00, 0x05, 0x08, 0xFF };
+	for (unsigned char id : notMultipoint)
+		CHECK_THROWS(serializeMultipointAlertResponse(id, true), std::invalid_argument);
+}
+
 // ---- existing replies, now bounded ------------------------------------------------------------
 
 TEST(protocol_nc_asm_report_keeps_every_field)

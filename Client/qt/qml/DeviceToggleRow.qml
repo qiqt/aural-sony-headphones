@@ -3,10 +3,12 @@ import QtQuick.Layouts
 import Aural
 
 // One control the headphones describe themselves. `control` is the controller's map for it
-// (phase, valueKnown, checked, pending, status - see HeadphonesController.h).
+// (phase, valueKnown, checked, pending, status, and for multipoint busy and note - see
+// HeadphonesController.h).
 //
 // The row only shows what is known: no switch position until the device has reported the
-// value, and no way to change it while the device says it cannot be changed.
+// value, and no way to change it while the device says it cannot be changed or while an
+// earlier change is still in progress.
 RowLayout {
     id: row
 
@@ -16,6 +18,7 @@ RowLayout {
     signal toggled(bool on)
 
     readonly property string phase: control.phase !== undefined ? control.phase : "absent"
+    readonly property string note: control.note !== undefined ? control.note : ""
 
     Layout.fillWidth: true
     visible: phase !== "absent"
@@ -34,10 +37,13 @@ RowLayout {
         }
         Text {
             Layout.fillWidth: true
-            visible: row.phase === "loading" || row.phase === "unavailable"
-            text: row.phase === "loading"
-                  ? "Reading the current setting from the headphones…"
-                  : "The headphones report that this can't be changed right now."
+            visible: text !== ""
+            // A change in progress says what it waits for; otherwise the phase explains a
+            // missing or disabled switch.
+            text: row.note !== "" ? row.note
+                  : row.phase === "loading" ? "Reading the current setting from the headphones..."
+                  : row.phase === "unavailable" ? "The headphones report that this can't be changed right now."
+                  : ""
             color: Theme.textSecondary
             font.pixelSize: Theme.labelSm
             font.italic: true
@@ -53,7 +59,7 @@ RowLayout {
         Layout.alignment: Qt.AlignVCenter
         visible: row.control.valueKnown === true
         checked: row.control.checked === true
-        enabled: row.phase === "ready"
+        enabled: row.phase === "ready" && row.control.busy !== true
         onToggled: (on) => row.toggled(on)
     }
 }

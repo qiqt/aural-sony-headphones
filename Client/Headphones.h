@@ -171,9 +171,10 @@ struct SettingsStatus {
 	SettingStatus voiceGuidance = SettingStatus::Unknown;
 	SettingStatus autoPowerOff = SettingStatus::Unknown;
 	SettingStatus optimizer = SettingStatus::Unknown;
-	SettingStatus multipoint = SettingStatus::Unknown;
+	SettingStatus multipoint = SettingStatus::Unknown;        // paired-device connect/disconnect
 	SettingStatus touchPanel = SettingStatus::Unknown;
 	SettingStatus wearingControl = SettingStatus::Unknown;
+	SettingStatus multipointMode = SettingStatus::Unknown;    // the multipoint on/off setting
 };
 
 // Whether the device said it supports a feature. Unknown is not "supported": it means the
@@ -207,6 +208,27 @@ struct ToggleSnapshot
 	bool value = false;        // what the device last reported (meaningful when valueKnown)
 	bool requested = false;    // what the app last asked for
 	SettingStatus status = SettingStatus::Unknown;
+};
+
+// Where a multipoint-mode change stands this session. The device can ask the user to confirm the
+// change (a fixed-message alert) and can drop the link to apply it, so a change passes through
+// more steps than an ordinary write, and a report of the old value does not end it.
+enum class MultipointStep
+{
+	None,        // nothing outstanding
+	Requested,   // asked for; the write has not gone out
+	Sent,        // the write is out; waiting for the device to report the value, ask, or drop the link
+	Confirming,  // the device asked for confirmation; waiting for the user
+	Answering,   // the user answered; the answer has not gone out
+	Accepted     // the user accepted; waiting for the device to apply it (it may drop the link)
+};
+
+// A read-only copy of the multipoint-mode change in progress.
+struct MultipointChange
+{
+	MultipointStep step = MultipointStep::None;
+	bool requested = false;                                   // meaningful while step != None
+	std::optional<CommandSerializer::MultipointAlert> alert;  // set while step == Confirming
 };
 
 // Thread-safety: every accessor takes _propertyMtx. setChanges() snapshots under the lock,
@@ -305,6 +327,30 @@ public:
 	bool setTouchPanel(bool enabled);
 	bool setWearingControl(bool enabled);
 
+	// Multipoint mode: the named general setting that lets the headset hold two connections at
+	// once. Not the paired-device list (getDevices / setMultiPointConnection).
+	//
+	// A change can need the user's consent: the device may answer the write with a fixed-message
+	// alert, and the change stays pending until the user has answered and the device reports the
+	// requested value - possibly after dropping the link to apply it. The session then ends here;
+	// the host reconnects and reads the value. One change at a time, and nothing is ever resent.
+	//
+	// installAlertHandling(): the host can show a multipoint alert and send the user's answer.
+	// Until then the device's alerts are never enabled and multipoint changes are refused, since
+	// a confirmation nobody sees could not be answered. Survives resetState().
+	void installAlertHandling();
+	// Refused unless alert handling is installed, the device has described the control, reports
+	// it available and has reported its value, and no other change is outstanding. Asking for
+	// the reported value before the write has gone out withdraws the change.
+	bool setMultipointMode(bool enabled);
+	MultipointChange getMultipointChange();
+	// Answer the alert awaiting the user, quoting the message ID the device sent. Refused for any
+	// other ID. The answer goes out on the command worker.
+	bool answerMultipointAlert(unsigned char messageId, bool accept);
+	// Stop waiting for a change the device has neither confirmed nor asked about (the host's
+	// timeout). The value is read again; the change is not resent.
+	void abandonMultipointChange();
+
 	// Per-setting status for the UI (see SettingStatus).
 	SettingsStatus getStatuses();
 
@@ -388,6 +434,14 @@ private:
 	// instead of going to a slot or state that has changed.
 	void _pushToggle(DiscoveredToggle& toggle);
 
+	// Send whichever multipoint frame is due: the write (preceded, once per session, by the alert
+	// enable) or the user's answer to an alert.
+	void _pushMultipointMode();
+	void _applyMultipointAlert(const CommandSerializer::MultipointAlert& alert);
+	// Called with _propertyMtx held, after the device reported the multipoint value.
+	void _settleMultipointChangeLocked();
+	SettingStatus _multipointModeStatusLocked() const;
+
 	// Called with _propertyMtx held.
 	bool _writableLocked(const DiscoveredToggle& toggle) const;
 	void _enqueueQueryLocked(Buffer payload, DATA_TYPE dataType = DATA_TYPE::DATA_MDR);
@@ -421,6 +475,17 @@ private:
 	DiscoveredToggle _touchPanel;
 	DiscoveredToggle _multipointMode;
 	DiscoveredToggle _wearingControl;
+
+	// The multipoint change in progress. _multipointMode.value only ever mirrors device reports;
+	// the request lives here so a report of the old value cannot settle it.
+	bool _alertHandling = false;      // set by the host once; not session state
+	bool _alertsEnabled = false;      // 94 01 00 ACKed this session
+	MultipointStep _mpStep = MultipointStep::None;
+	bool _mpRequested = false;
+	bool _mpWriteInFlight = false;    // the write is on the wire, its ACK not yet in
+	std::optional<CommandSerializer::MultipointAlert> _mpAlert;
+	unsigned char _mpAnswerId = 0;
+	bool _mpAccept = false;
 
 	std::deque<PendingQuery> _queries;
 	// Bumped by resetState(). A query queued under one session is never sent in the next.

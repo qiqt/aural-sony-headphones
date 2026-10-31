@@ -217,7 +217,12 @@ ToggleSnapshot Headphones::getTouchPanel()
 ToggleSnapshot Headphones::getMultipointMode()
 {
 	std::lock_guard guard(this->_propertyMtx);
-	return this->_multipointMode.snapshot();
+	ToggleSnapshot s = this->_multipointMode.snapshot();
+	// The request lives beside the reported value (see _mpStep), not in it.
+	if (this->_mpStep != MultipointStep::None)
+		s.requested = this->_mpRequested;
+	s.status = this->_multipointModeStatusLocked();
+	return s;
 }
 
 ToggleSnapshot Headphones::getWearingControl()
@@ -299,6 +304,225 @@ void Headphones::_pushToggle(DiscoveredToggle& toggle)
 	this->_enqueueQueryLocked(std::move(readBack));
 }
 
+// ---- multipoint mode ---------------------------------------------------------------------------
+
+void Headphones::installAlertHandling()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_alertHandling = true;
+}
+
+bool Headphones::setMultipointMode(bool enabled)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_alertHandling || !this->_writableLocked(this->_multipointMode))
+		return false;
+
+	const bool current = *this->_multipointMode.value.reported;
+	switch (this->_mpStep)
+	{
+	case MultipointStep::None:
+		if (enabled != current)
+		{
+			this->_mpRequested = enabled;
+			this->_mpStep = MultipointStep::Requested;
+		}
+		return true;
+	case MultipointStep::Requested:
+		// Not on the wire yet, so it can still be changed or withdrawn.
+		this->_mpRequested = enabled;
+		if (enabled == current)
+			this->_mpStep = MultipointStep::None;
+		return true;
+	default:
+		// The device has the change already: the user answers it, or the device reports.
+		return false;
+	}
+}
+
+MultipointChange Headphones::getMultipointChange()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	MultipointChange c;
+	c.step = this->_mpStep;
+	c.requested = this->_mpRequested;
+	c.alert = this->_mpAlert;
+	return c;
+}
+
+bool Headphones::answerMultipointAlert(unsigned char messageId, bool accept)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	// Only the alert awaiting the user, quoted back with the ID the device gave it.
+	if (this->_mpStep != MultipointStep::Confirming || !this->_mpAlert || this->_mpAlert->messageId != messageId)
+		return false;
+	this->_mpAnswerId = messageId;
+	this->_mpAccept = accept;
+	this->_mpAlert.reset();
+	this->_mpStep = MultipointStep::Answering;
+	return true;
+}
+
+void Headphones::abandonMultipointChange()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	// Only a change the device owes an answer for. An alert awaits the user, not the device, and
+	// a write still waiting for its ACK is the transport's to time out.
+	if ((this->_mpStep != MultipointStep::Sent && this->_mpStep != MultipointStep::Accepted) || this->_mpWriteInFlight)
+		return;
+	this->_mpStep = MultipointStep::None;
+	this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingQuery(this->_multipointMode.selector));
+}
+
+SettingStatus Headphones::_multipointModeStatusLocked() const
+{
+	switch (this->_mpStep)
+	{
+	case MultipointStep::Requested:
+	case MultipointStep::Answering:
+		return SettingStatus::Requested;
+	case MultipointStep::Sent:
+		return this->_mpWriteInFlight ? SettingStatus::Requested : SettingStatus::Acknowledged;
+	case MultipointStep::Confirming:
+	case MultipointStep::Accepted:
+		return SettingStatus::Acknowledged;
+	case MultipointStep::None:
+		break;
+	}
+	return this->_multipointMode.value.status;
+}
+
+void Headphones::_pushMultipointMode()
+{
+	unsigned char slot = 0;
+	bool needAlerts = false;
+	bool answering = false;
+	unsigned char messageId = 0;
+	bool accept = false;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_mpStep == MultipointStep::Answering)
+		{
+			answering = true;
+			messageId = this->_mpAnswerId;
+			accept = this->_mpAccept;
+		}
+		else if (this->_mpStep == MultipointStep::Requested)
+		{
+			// Re-checked now: the device may have made it unavailable since it was asked for.
+			if (!this->_alertHandling || !this->_writableLocked(this->_multipointMode))
+			{
+				this->_mpStep = MultipointStep::None;
+				return;
+			}
+			slot = this->_multipointMode.selector;
+			needAlerts = !this->_alertsEnabled;
+		}
+		else
+			return;
+	}
+
+	if (answering)
+	{
+		// If this fails the session ends with the step still Answering: whether the device
+		// heard the answer is unknown, so the host reads the value after reconnecting.
+		this->_conn.sendCommand(CommandSerializer::serializeMultipointAlertResponse(messageId, accept));
+
+		std::lock_guard guard(this->_propertyMtx);
+		// A report of the requested value may already have settled the change.
+		if (this->_mpStep == MultipointStep::Answering)
+			this->_mpStep = accept ? MultipointStep::Accepted : MultipointStep::None;
+		this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingQuery(this->_multipointMode.selector));
+		return;
+	}
+
+	// The device can only ask for confirmation once it sends alerts; enable them first, once per
+	// session. A failure here ends the session before the change was written.
+	if (needAlerts)
+	{
+		try
+		{
+			this->_conn.sendCommand(CommandSerializer::serializeAlertEnable());
+		}
+		catch (...)
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_mpStep = MultipointStep::None;
+			throw;
+		}
+	}
+
+	bool value = false;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (needAlerts)
+			this->_alertsEnabled = true;
+		// The change may have been withdrawn, or the control become unavailable, meanwhile.
+		if (this->_mpStep != MultipointStep::Requested || !this->_writableLocked(this->_multipointMode))
+		{
+			this->_mpStep = MultipointStep::None;
+			return;
+		}
+		value = this->_mpRequested;
+		// Sent before the frame goes out: the device can raise its alert before this side has
+		// processed the ACK, and the alert must find the change it belongs to.
+		this->_mpStep = MultipointStep::Sent;
+		this->_mpWriteInFlight = true;
+	}
+
+	try
+	{
+		this->_conn.sendCommand(CommandSerializer::serializeGeneralSettingBool(slot, value));
+	}
+	catch (...)
+	{
+		// The frame may have arrived. The session is ending; the step stays Sent so the host
+		// reads the value after reconnecting instead of assuming either outcome.
+		std::lock_guard guard(this->_propertyMtx);
+		this->_mpWriteInFlight = false;
+		throw;
+	}
+
+	std::lock_guard guard(this->_propertyMtx);
+	this->_mpWriteInFlight = false;
+	// The read reports what the device holds now. The old value does not end the change: the
+	// device may be about to ask for confirmation, or about to drop the link to apply it.
+	this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingQuery(slot));
+}
+
+void Headphones::_applyMultipointAlert(const CommandSerializer::MultipointAlert& alert)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	// Only an alert about the change this session sent, in the direction it asked for. Anything
+	// else - no change out, a change already answered, the opposite direction - is not ours to
+	// answer, so it is left alone rather than accepted or refused on the user's behalf.
+	if (this->_multipointMode.support != CapabilityState::Supported)
+		return;
+	const bool turningOn = alert.messageId == v1::ALERT_MSG_MULTIPOINT_TO_ON;
+	if (turningOn != this->_mpRequested)
+		return;
+	if (this->_mpStep == MultipointStep::Sent ||
+		(this->_mpStep == MultipointStep::Confirming && this->_mpAlert && this->_mpAlert->messageId == alert.messageId))
+	{
+		this->_mpAlert = alert;
+		this->_mpStep = MultipointStep::Confirming;
+	}
+}
+
+void Headphones::_settleMultipointChangeLocked()
+{
+	if (this->_mpStep == MultipointStep::None || !this->_multipointMode.value.reported)
+		return;
+	// The device holds what was asked for: the change took effect (or, before the write went
+	// out, was no longer needed). Any alert or answer still pending is moot.
+	if (*this->_multipointMode.value.reported == this->_mpRequested)
+	{
+		this->_mpStep = MultipointStep::None;
+		this->_mpAlert.reset();
+	}
+	// The old value says nothing about whether the change is still coming.
+}
+
 SettingsStatus Headphones::getStatuses()
 {
 	std::lock_guard guard(this->_propertyMtx);
@@ -331,6 +555,7 @@ SettingsStatus Headphones::getStatuses()
 	s.multipoint = worst(this->_dev1.status, this->_dev2.status);
 	s.touchPanel = this->_touchPanel.value.status;
 	s.wearingControl = this->_wearingControl.value.status;
+	s.multipointMode = this->_multipointModeStatusLocked();
 	return s;
 }
 
@@ -440,6 +665,9 @@ int Headphones::getEqualizerLevelCount()
 bool Headphones::isChanged()
 {
 	std::lock_guard guard(this->_propertyMtx);
+	// A multipoint write, or the user's answer to its alert, waiting for the command worker.
+	if (this->_mpStep == MultipointStep::Requested || this->_mpStep == MultipointStep::Answering)
+		return true;
 	return !(this->_ambientSoundControl.isFulfilled() &&
 		this->_asmLevel.isFulfilled() &&
 		this->_focusOnVoice.isFulfilled() &&
@@ -545,6 +773,7 @@ void Headphones::setChanges()
 	run([&] { this->_pushMultipoint(); });
 	run([&] { this->_pushToggle(this->_touchPanel); });
 	run([&] { this->_pushToggle(this->_wearingControl); });
+	run([&] { this->_pushMultipointMode(); });
 
 	if (firstError)
 		throw RecoverableException(*firstError);
@@ -976,8 +1205,19 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 		{
 			std::lock_guard guard(this->_propertyMtx);
 			if (DiscoveredToggle* toggle = this->_generalSettingForSlotLocked(value->selector))
+			{
 				toggle->value.setState(value->enabled);
+				if (toggle == &this->_multipointMode)
+					this->_settleMultipointChangeLocked();
+			}
 		}
+		break;
+
+	case v1::t1::ALERT_NTFY_PARAM:
+		// Only the two multipoint confirmations decode; any other fixed message is left
+		// unanswered rather than accepted or refused on the user's behalf.
+		if (auto alert = parseMultipointAlert(msg))
+			this->_applyMultipointAlert(*alert);
 		break;
 
 	case v1::t1::SYSTEM_RET_CAPABILITY:
@@ -1274,6 +1514,17 @@ void Headphones::resetState()
 	this->_wearingControl.reset();
 	this->_queries.clear();
 	++this->_generation;
+
+	// A multipoint change ends with its session. The host may carry on to verify it on the next
+	// connection (by reading the value), but nothing here is replayed. _alertHandling belongs to
+	// the host, not the session, and stays.
+	this->_alertsEnabled = false;
+	this->_mpStep = MultipointStep::None;
+	this->_mpRequested = false;
+	this->_mpWriteInFlight = false;
+	this->_mpAlert.reset();
+	this->_mpAnswerId = 0;
+	this->_mpAccept = false;
 
 	this->_ambientSoundControl.reset(false);
 	this->_focusOnVoice.reset(false);
