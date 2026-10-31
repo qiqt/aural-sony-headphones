@@ -153,6 +153,21 @@ TEST(protocol_general_setting_query_builders)
 	CHECK_EQ(toHex(serializeGeneralSettingQuery(0xD1)), std::string("D6 D1"));
 }
 
+TEST(protocol_general_setting_write_goes_to_the_discovered_slot)
+{
+	// set_general: D8 slot 01(BOOLEAN_TYPE) value, for whichever slot the capability named.
+	for (unsigned char slot : SLOTS)
+	{
+		const std::string s = toHex(Buffer{ static_cast<char>(slot) });
+		CHECK_EQ(toHex(serializeGeneralSettingBool(slot, true)), "D8 " + s + " 01 01");
+		CHECK_EQ(toHex(serializeGeneralSettingBool(slot, false)), "D8 " + s + " 01 00");
+	}
+	// Without a discovered slot there is nothing to write to; the builder refuses to guess.
+	const unsigned char notSlots[] = { 0x00, 0xD0, 0xD4, 0xFF };
+	for (unsigned char notASlot : notSlots)
+		CHECK_THROWS(serializeGeneralSettingBool(notASlot, true), std::invalid_argument);
+}
+
 // ---- availability and value ---------------------------------------------------------------------
 
 TEST(protocol_availability_is_not_enabled)
@@ -214,6 +229,10 @@ TEST(protocol_wearing_vectors)
 	CHECK_EQ(toHex(serializeSystemCapabilityQuery(0x03)), std::string("F0 03"));
 	CHECK_EQ(toHex(serializeSystemStatusQuery(0x03)), std::string("F2 03"));
 	CHECK_EQ(toHex(serializeSystemQuery(0x03)), std::string("F6 03"));
+
+	// set_wearing: F8 03 00(ON_OFF) value.
+	CHECK_EQ(toHex(serializeWearingControl(true)), std::string("F8 03 00 01"));
+	CHECK_EQ(toHex(serializeWearingControl(false)), std::string("F8 03 00 00"));
 }
 
 // ---- existing replies, now bounded ------------------------------------------------------------

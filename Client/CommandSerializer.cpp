@@ -201,6 +201,20 @@ namespace CommandSerializer
 			static_cast<char>(selectedTimeElement) };
 	}
 
+	Buffer serializeGeneralSettingBool(unsigned char slot, bool enabled)
+	{
+		if (!v1::isGeneralSettingSlot(slot))
+			throw std::invalid_argument("not a general-setting slot: discover the capability first");
+		return { static_cast<char>(v1::t1::GENERAL_SETTING_SET_PARAM), static_cast<char>(slot),
+			static_cast<char>(v1::GS_TYPE_BOOLEAN), static_cast<char>(enabled ? 0x01 : 0x00) };
+	}
+
+	Buffer serializeWearingControl(bool enabled)
+	{
+		return { static_cast<char>(v1::t1::SYSTEM_SET_PARAM), static_cast<char>(v1::SYSTEM_CONTROL_BY_WEARING),
+			static_cast<char>(v1::PROTOCOL_SETTING_TYPE_ON_OFF), static_cast<char>(enabled ? 0x01 : 0x00) };
+	}
+
 	Buffer serializeNcAsmQuery()
 	{
 		return { static_cast<char>(v1::t1::NCASM_GET_PARAM),

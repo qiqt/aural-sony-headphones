@@ -58,6 +58,9 @@ public:
 			_sentBytes.insert(_sentBytes.end(), buf, buf + length);
 			parsed = _drainCompleteFramesLocked();
 			_sent.insert(_sent.end(), parsed.begin(), parsed.end());
+			for (const auto& msg : parsed)
+				if (msg.dataType == DATA_TYPE::ACK)
+					++_hostAcks;
 			_cv.notify_all();
 		}
 
@@ -123,6 +126,8 @@ public:
 		_sendsFail = false;
 		_incoming.clear();
 		_sentBytes.clear();
+		_dataFramesQueued = 0;
+		_hostAcks = 0;
 		_cv.notify_all();
 	}
 
@@ -269,6 +274,12 @@ public:
 	void enqueueData(const Buffer& payload, DATA_TYPE dataType = DATA_TYPE::DATA_MDR,
 		unsigned char seq = 0)
 	{
+		// The host's reader acknowledges frames from the two command tables (see quiescent()).
+		if (dataType == DATA_TYPE::DATA_MDR || dataType == DATA_TYPE::DATA_MDR_NO2)
+		{
+			std::lock_guard<std::mutex> guard(_mtx);
+			++_dataFramesQueued;
+		}
 		enqueueRaw(CommandSerializer::packageDataForBt(payload, dataType, seq));
 	}
 
@@ -328,6 +339,23 @@ public:
 	{
 		std::unique_lock<std::mutex> guard(_mtx);
 		return _cv.wait_for(guard, timeout, [this] { return _incoming.empty(); });
+	}
+
+	// ACK frames the host has sent this connection. Unlike sentFrames(), clearSent() leaves it alone.
+	size_t hostAcks()
+	{
+		std::lock_guard<std::mutex> guard(_mtx);
+		return _hostAcks;
+	}
+
+	// Every DATA reply queued with enqueueData() has been read and acknowledged. The reader applies
+	// a reply before it ACKs it, so the state a reply changed can be visible while the reader is
+	// still busy with it: this, not that state, says the reader is done. Frames queued with
+	// enqueueRaw() are not counted.
+	bool quiescent()
+	{
+		std::lock_guard<std::mutex> guard(_mtx);
+		return _incoming.empty() && _hostAcks >= _dataFramesQueued;
 	}
 
 	int connectCount()
@@ -440,6 +468,8 @@ private:
 	int _batteryLookups = 0;
 	int _disconnectCount = 0;
 	int _recvCount = 0;
+	size_t _dataFramesQueued = 0;   // enqueueData() frames the host's reader will ACK
+	size_t _hostAcks = 0;
 
 	std::string _lastAddr;
 	SonyProtocol _lastProtocol = SonyProtocol::V1;

@@ -17,6 +17,7 @@
 #include <QCoreApplication>
 #include <QSignalSpy>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
@@ -377,6 +378,64 @@ TEST(controller_auto_power_off_offers_only_the_models_choices)
 	CHECK(spinUntil([&] { return !f.hp->connected(); }));
 	CHECK(f.connectTo(XM3));
 	CHECK_EQ(f.hp->autoPowerOffOptions().size(), 6);
+}
+
+// Touch panel and wearing control: offered only as the device describes them, written only once
+// their value is known and the device says they can change, and shown as what it reports.
+TEST(controller_discovered_controls_follow_the_device)
+{
+	ControllerFixture f;
+	auto touchValue = std::make_shared<std::atomic<int>>(0);
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 02 D2 F3"))
+		.on("D0 D2 01", replies::generalSettingCapability(0xD2, v1::GS_TITLE_TOUCH_PANEL))
+		.on("D2 D2", replies::hex("D3 D2 00"))
+		.on("F0 03", replies::hex("F1 03 00"))
+		.on("F2 03", replies::hex("F3 03 01"))          // wearing control: unavailable right now
+		.on("F6 03", replies::hex("F7 03 00 01"))
+		.onRequest("D8 D2 01 01", [touchValue](FakeBluetoothConnector&, const CommandSerializer::Message&) { *touchValue = 1; })
+		.onRequest("D6 D2", [touchValue](FakeBluetoothConnector& fake, const CommandSerializer::Message&) {
+			fake.enqueueData(Buffer{ static_cast<char>(0xD7), static_cast<char>(0xD2), 0x01,
+				static_cast<char>(touchValue->load()) });
+		});
+	device.installOn(*f.fake);
+
+	auto touch = [&] { return f.hp->touchPanel(); };
+	auto wearing = [&] { return f.hp->wearingControl(); };
+	CHECK_EQ(touch().value("phase").toString().toStdString(), std::string("absent"));
+
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK_MSG(spinUntil([&] {
+		return touch().value("phase").toString() == "ready" && wearing().value("phase").toString() == "unavailable";
+	}), "both controls should be described, read, and shown with the availability the device reported");
+	CHECK_EQ(touch().value("checked").toBool(), false);
+	CHECK_EQ(wearing().value("checked").toBool(), true);
+	CHECK_EQ(wearing().value("valueKnown").toBool(), true);
+
+	// The device says wearing control cannot change now: the request goes nowhere.
+	f.hp->setWearingControlEnabled(false);
+	spinFor(std::chrono::milliseconds(200));
+	CHECK(!wasSent(*f.fake, "F8 03 00 00"));
+	CHECK_EQ(wearing().value("checked").toBool(), true);
+
+	// Touch can: the request shows at once as pending, then as the device's confirmed value.
+	f.hp->setTouchPanelEnabled(true);
+	CHECK_EQ(touch().value("checked").toBool(), true);
+	CHECK_EQ(touch().value("pending").toBool(), true);
+	CHECK(spinUntil([&] { return wasSent(*f.fake, "D8 D2 01 01"); }));
+	CHECK_MSG(spinUntil([&] {
+		return touch().value("status").toString() == "confirmed" && !touch().value("pending").toBool();
+	}), "the read after the write should confirm it");
+	CHECK_EQ(touch().value("checked").toBool(), true);
+	CHECK_EQ(f.hp->settingStatus().value("touchPanel").toString().toStdString(), std::string("confirmed"));
+
+	// A new session starts from nothing.
+	f.hp->disconnectDevice();
+	CHECK(spinUntil([&] { return !f.hp->connected(); }));
+	CHECK_EQ(touch().value("phase").toString().toStdString(), std::string("absent"));
+	CHECK_EQ(wearing().value("phase").toString().toStdString(), std::string("absent"));
+	CHECK_EQ(f.hp->settingStatus().value("touchPanel").toString().toStdString(), std::string("unknown"));
 }
 
 int main(int argc, char* argv[])

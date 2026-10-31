@@ -172,6 +172,8 @@ struct SettingsStatus {
 	SettingStatus autoPowerOff = SettingStatus::Unknown;
 	SettingStatus optimizer = SettingStatus::Unknown;
 	SettingStatus multipoint = SettingStatus::Unknown;
+	SettingStatus touchPanel = SettingStatus::Unknown;
+	SettingStatus wearingControl = SettingStatus::Unknown;
 };
 
 // Whether the device said it supports a feature. Unknown is not "supported": it means the
@@ -295,6 +297,14 @@ public:
 	ToggleSnapshot getMultipointMode();
 	ToggleSnapshot getWearingControl();
 
+	// Ask for a discovered control to change. Refused (returns false, nothing queued) unless the
+	// device has described the feature, reported it available, and reported its current value:
+	// a write needs the negotiated slot/type, and "unknown" must not be mistaken for "off".
+	// Touch panel enables the ear-cup touch controls; it does not remap gestures. Wearing
+	// control lets the headset act on wearing detection; it is not a worn/not-worn sensor.
+	bool setTouchPanel(bool enabled);
+	bool setWearingControl(bool enabled);
+
 	// Per-setting status for the UI (see SettingStatus).
 	SettingsStatus getStatuses();
 
@@ -373,7 +383,13 @@ private:
 	void _applyNcAsm(const CommandSerializer::NcAsmReport& report);
 	void _applyEqualizer(const CommandSerializer::EqualizerReport& report);
 
+	// Write a discovered toggle, then queue a read of it. The gate and the slot are re-checked
+	// under the lock when the frame is built: a request the feature can no longer take fails
+	// instead of going to a slot or state that has changed.
+	void _pushToggle(DiscoveredToggle& toggle);
+
 	// Called with _propertyMtx held.
+	bool _writableLocked(const DiscoveredToggle& toggle) const;
 	void _enqueueQueryLocked(Buffer payload, DATA_TYPE dataType = DATA_TYPE::DATA_MDR);
 	bool _advertisedLocked(FUNCTION_TYPE fn) const;
 	DiscoveredToggle* _generalSettingForSlotLocked(unsigned char slot);

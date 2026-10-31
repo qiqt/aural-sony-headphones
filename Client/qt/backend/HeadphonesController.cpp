@@ -59,7 +59,45 @@ QVariantMap statusMap(const SettingsStatus& s)
     m["autoPowerOff"] = statusName(s.autoPowerOff);
     m["optimizer"] = statusName(s.optimizer);
     m["multipoint"] = statusName(s.multipoint);
+    m["touchPanel"] = statusName(s.touchPanel);
+    m["wearingControl"] = statusName(s.wearingControl);
     return m;
+}
+
+// A discovered control as QML sees it; the keys are documented on the touchPanel property.
+QVariantMap toggleMap(const ToggleSnapshot& t)
+{
+    QString phase = QStringLiteral("ready");
+    if (t.support != CapabilityState::Supported)
+        phase = QStringLiteral("absent");
+    else if (t.availability == Availability::Unavailable)
+        phase = QStringLiteral("unavailable");
+    else if (t.availability == Availability::Unknown || !t.valueKnown)
+        phase = QStringLiteral("loading");
+
+    // Until a read answers the request, the switch shows what was asked for and the status says
+    // it is not confirmed. After that it shows what the device reported, whatever was asked.
+    const bool pending = t.status == SettingStatus::Requested || t.status == SettingStatus::Acknowledged;
+    QVariantMap m;
+    m["phase"] = phase;
+    m["valueKnown"] = t.valueKnown;
+    m["checked"] = pending ? t.requested : t.value;
+    m["pending"] = pending;
+    m["status"] = statusName(t.status);
+    return m;
+}
+
+// Demo mode has no engine behind it: a described, available control the device "confirmed".
+ToggleSnapshot demoToggle(bool on)
+{
+    ToggleSnapshot t;
+    t.support = CapabilityState::Supported;
+    t.availability = Availability::Available;
+    t.valueKnown = true;
+    t.value = on;
+    t.requested = on;
+    t.status = SettingStatus::Confirmed;
+    return t;
 }
 
 // UI preset index -> engine EQ_PRESET. Indices 9..11 (Manual/Custom1/Custom2) use the bands.
@@ -128,6 +166,8 @@ void HeadphonesController::init()
 {
     _clock.start();
     _settingStatus = statusMap(SettingsStatus{});
+    _touchPanel = toggleMap(ToggleSnapshot{});
+    _wearingControl = toggleMap(ToggleSnapshot{});
 
     _demo = qEnvironmentVariableIsSet("AURAL_DEMO");
     if (_demo)
@@ -157,6 +197,8 @@ void HeadphonesController::init()
             mpEntry("MacBook Pro", "Active audio source", 1),
             mpEntry("iPhone 15", "Standby", 2)
         };
+        _touchPanel = toggleMap(demoToggle(true));
+        _wearingControl = toggleMap(demoToggle(true));
 
         // Demo mode is a UI preview, so it also previews the honest status vocabulary: most
         // settings read back as Confirmed, one is still only Sent, one was never read.
@@ -170,6 +212,8 @@ void HeadphonesController::init()
         demoStatus.autoPowerOff = SettingStatus::Confirmed;
         demoStatus.optimizer = SettingStatus::Confirmed;
         demoStatus.multipoint = SettingStatus::Confirmed;
+        demoStatus.touchPanel = SettingStatus::Confirmed;
+        demoStatus.wearingControl = SettingStatus::Confirmed;
         _settingStatus = statusMap(demoStatus);
         return;
     }
@@ -524,6 +568,46 @@ void HeadphonesController::setAutoPowerOff(int v)
     emit systemChanged();
 }
 
+// ---- Headphone controls ----
+// The engine refuses a request unless the device has described the control, reports it
+// available and has reported its value - the facts that make the phase "ready".
+void HeadphonesController::setTouchPanelEnabled(bool on)
+{
+    if (_demo)
+    {
+        _touchPanel = toggleMap(demoToggle(on));
+        emit controlsChanged();
+        return;
+    }
+    if (!connected() || _protocol != SonyProtocol::V1) return;
+    if (_headphones.setTouchPanel(on))
+        syncControls();
+}
+
+void HeadphonesController::setWearingControlEnabled(bool on)
+{
+    if (_demo)
+    {
+        _wearingControl = toggleMap(demoToggle(on));
+        emit controlsChanged();
+        return;
+    }
+    if (!connected() || _protocol != SonyProtocol::V1) return;
+    if (_headphones.setWearingControl(on))
+        syncControls();
+}
+
+void HeadphonesController::syncControls()
+{
+    const QVariantMap touch = toggleMap(_headphones.getTouchPanel());
+    const QVariantMap wearing = toggleMap(_headphones.getWearingControl());
+    if (touch == _touchPanel && wearing == _wearingControl)
+        return;
+    _touchPanel = touch;
+    _wearingControl = wearing;
+    emit controlsChanged();
+}
+
 void HeadphonesController::mpDisconnect(int slot)
 {
     if (!supportsMultipoint()) return;
@@ -844,6 +928,7 @@ void HeadphonesController::emitLiveDeltas()
     if (fav != _cFocusAvail) { _cFocusAvail = fav; emit ambientChanged(); }
 
     syncReadBack(_headphones.getStatuses());
+    syncControls();
 
     // Multipoint list (device-driven)
     if (supportsMultipoint())
@@ -1064,6 +1149,8 @@ void HeadphonesController::resetUiState()
     _dsee = false;
     _voiceGuidance = false;
     _autoPowerOff = 0;
+    _touchPanel = toggleMap(ToggleSnapshot{});
+    _wearingControl = toggleMap(ToggleSnapshot{});
     _mpDevices.clear();
     _settingStatus = statusMap(SettingsStatus{});
 
@@ -1072,6 +1159,7 @@ void HeadphonesController::resetUiState()
     emit spatialChanged();
     emit s2cChanged();
     emit systemChanged();
+    emit controlsChanged();
     emit multipointChanged();
     emit batteryChanged();
     emit capabilitiesChanged();

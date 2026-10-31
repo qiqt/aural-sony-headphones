@@ -64,6 +64,24 @@ Not done here: the EQ (`50/51`), VPT (`40/41`), audio (`E0/E1`) and auto power-o
 capability layouts were not recovered, so ranges and choices come from the reported state and the
 model, not from capability metadata.
 
+## Touch panel and wearing control
+
+New controls on the System screen. Neither write has been sent to a headset.
+
+| Control | Write | Evidence | Notes |
+|---|---|---|---|
+| Touch panel | `D8 slot 01 v` | APK, Test | `slot` is the one whose `D1` reply named `TOUCH_PANEL_SETTING`; the builder refuses anything outside D1–D3. Enables or disables the touch panel. It does not remap gestures. |
+| Wearing control | `F8 03 00 v` | APK, Test | Only after `F3` was advertised and `F1 03` reported type `00`. This is the setting that lets the headset act on wearing detection. It is not a reading of whether the headphones are being worn. |
+
+A write is accepted only when all three are true: the device described the control, its last
+availability report said available, and it has reported the current value. Before that the row
+says it is reading from the headphones, and it has no switch. The gate is checked again when the
+frame is built. If an availability notification has arrived in between, the request fails and
+nothing is sent. After the ACK the control is read again (`D6 slot` / `F6 03`). The status says
+Confirmed only once that read answers, and a value the device did not apply replaces the request
+on screen. A request still pending when the session ends is dropped, not replayed after
+reconnect. Writes after reconnect go to whichever slot the new discovery reports.
+
 ## XM4 hardware pass
 
 Not yet run. To be completed on a WH-1000XM4 before any APK-only behaviour is described as
@@ -79,3 +97,10 @@ working:
    Specifically check that the `57` equalizer reply has 6 levels with the +10 bias, the
    Speak-to-Chat `FB` layout, and the voice-guidance `46 01 01` read.
 6. Auto power-off: capture `F7 04` with each mode, and whether the XM4 really offers no timers.
+7. Touch panel: confirm the slot from step 3, then turn it off in Aural. Check that `D8 slot 01 00`
+   is ACKed, that the `D7` read reports `00`, and that touching the ear cup does nothing. Turn it
+   back on. Repeat the change from Sony's app and check that Aural follows the `D9` notification.
+   Note any condition under which `D3/D5` reports unavailable.
+8. Wearing control: turn it off and on in Aural and capture `F8 03 00 v` → ACK → `F7 03 00 v`.
+   Record what the headset actually does differently (pausing on removal, and anything else),
+   so the label can describe it.

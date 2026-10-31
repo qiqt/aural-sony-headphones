@@ -126,6 +126,7 @@ qt_add_qml_module(appAural
         qml/PlaceholderScreen.qml
         qml/AboutScreen.qml
         qml/StatusChip.qml
+        qml/DeviceToggleRow.qml
 )
 
 qt_add_resources(appAural "appfonts"

@@ -226,6 +226,79 @@ ToggleSnapshot Headphones::getWearingControl()
 	return this->_wearingControl.snapshot();
 }
 
+bool Headphones::_writableLocked(const DiscoveredToggle& toggle) const
+{
+	return toggle.support == CapabilityState::Supported &&
+		toggle.availability == Availability::Available &&
+		toggle.value.reported.has_value();
+}
+
+bool Headphones::setTouchPanel(bool enabled)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_writableLocked(this->_touchPanel))
+		return false;
+	this->_touchPanel.value.setDesired(enabled);
+	return true;
+}
+
+bool Headphones::setWearingControl(bool enabled)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_writableLocked(this->_wearingControl))
+		return false;
+	this->_wearingControl.value.setDesired(enabled);
+	return true;
+}
+
+void Headphones::_pushToggle(DiscoveredToggle& toggle)
+{
+	bool value = false;
+	unsigned long long rev = 0;
+	Buffer payload;
+	Buffer readBack;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (toggle.value.isFulfilled())
+			return;
+		rev = toggle.value.revision;
+		// It was writable when requested; it may not be now (an availability notification, or
+		// a slot the device never confirmed). Say so rather than send it anyway.
+		if (!this->_writableLocked(toggle))
+		{
+			toggle.value.markFailed(rev);
+			return;
+		}
+		value = toggle.value.desired;
+		if (&toggle == &this->_wearingControl)
+		{
+			payload = CommandSerializer::serializeWearingControl(value);
+			readBack = CommandSerializer::serializeSystemQuery(v1::SYSTEM_CONTROL_BY_WEARING);
+		}
+		else
+		{
+			payload = CommandSerializer::serializeGeneralSettingBool(toggle.selector, value);
+			readBack = CommandSerializer::serializeGeneralSettingQuery(toggle.selector);
+		}
+	}
+
+	try
+	{
+		this->_conn.sendCommand(payload);
+	}
+	catch (...)
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		toggle.value.markFailed(rev);
+		throw;
+	}
+
+	std::lock_guard guard(this->_propertyMtx);
+	toggle.value.markSent(rev, value);
+	// The ACK says the frame arrived; the read says whether the setting changed.
+	this->_enqueueQueryLocked(std::move(readBack));
+}
+
 SettingsStatus Headphones::getStatuses()
 {
 	std::lock_guard guard(this->_propertyMtx);
@@ -256,6 +329,8 @@ SettingsStatus Headphones::getStatuses()
 	s.autoPowerOff = this->_autoPowerOff.status;
 	s.optimizer = this->_optimizerState.status;
 	s.multipoint = worst(this->_dev1.status, this->_dev2.status);
+	s.touchPanel = this->_touchPanel.value.status;
+	s.wearingControl = this->_wearingControl.value.status;
 	return s;
 }
 
@@ -378,7 +453,9 @@ bool Headphones::isChanged()
 		this->_eq.isFulfilled() &&
 		this->_audioUpsampling.isFulfilled() &&
 		this->_voiceGuidance.isFulfilled() &&
-		this->_autoPowerOff.isFulfilled());
+		this->_autoPowerOff.isFulfilled() &&
+		this->_touchPanel.value.isFulfilled() &&
+		this->_wearingControl.value.isFulfilled());
 }
 
 void Headphones::setChanges()
@@ -466,6 +543,8 @@ void Headphones::setChanges()
 	run([&] { this->_pushNcAsm(); });
 	run([&] { this->_pushSpatial(); });
 	run([&] { this->_pushMultipoint(); });
+	run([&] { this->_pushToggle(this->_touchPanel); });
+	run([&] { this->_pushToggle(this->_wearingControl); });
 
 	if (firstError)
 		throw RecoverableException(*firstError);

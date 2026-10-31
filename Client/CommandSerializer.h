@@ -65,6 +65,11 @@ namespace CommandSerializer
 	// written as given; see Headphones::setAutoPowerOff for how the second one is preserved.
 	Buffer serializeAutoPowerOff(unsigned char activeElement, unsigned char selectedTimeElement);
 
+	// D8 slot 01 value: a BOOLEAN_TYPE general setting. The slot must come from discovery.
+	Buffer serializeGeneralSettingBool(unsigned char slot, bool enabled);
+	// F8 03 00 value: wearing control, ProtocolSettingType.ON_OFF.
+	Buffer serializeWearingControl(bool enabled);
+
 	// ---- discovery and read queries (table 1 / DATA_MDR unless noted) ------------------------
 	Buffer serializeNcAsmQuery();                                      // 66 02
 	Buffer serializeEqualizerQuery();                                  // 56 01

@@ -81,8 +81,8 @@ class HeadphonesController : public QObject
 
     // Per-setting status: "unknown" | "requested" | "acknowledged" | "confirmed" | "failed".
     // Keys: ambient, equalizer, spatial, speakToChat, dsee, voiceGuidance, autoPowerOff,
-    // optimizer, multipoint. An "acknowledged" setting was received by the headphones; only
-    // "confirmed" means the device reported that value back.
+    // optimizer, multipoint, touchPanel, wearingControl. An "acknowledged" setting was received
+    // by the headphones; only "confirmed" means the device reported that value back.
     Q_PROPERTY(QVariantMap settingStatus READ settingStatus NOTIFY settingStatusChanged)
 
     // Ambient Sound. ambientMode: 0 = Noise Cancelling, 1 = Ambient Sound, 2 = Off.
@@ -123,6 +123,23 @@ class HeadphonesController : public QObject
     // device itself has reported. Nothing outside this list is sent. Moves with the connection
     // (the model) and with a reported element, both of which emit capabilitiesChanged.
     Q_PROPERTY(QVariantList autoPowerOffOptions READ autoPowerOffOptions NOTIFY capabilitiesChanged)
+
+    // Controls the headphones have to describe before the app may touch them. Each is a map:
+    //   phase      "absent"      not offered: no V1 connection, not described (yet), or the
+    //                            device has no such setting
+    //              "loading"     described, but its availability or current value is unread
+    //              "unavailable" the device reports it cannot be changed right now
+    //              "ready"       available and its current value is known
+    //   valueKnown the device has reported the value this session
+    //   checked    what the switch shows: the request while one is unanswered, otherwise the
+    //              value the device last reported
+    //   pending    a request has not been answered by a read yet
+    //   status     the settingStatus vocabulary
+    // Touch panel turns the ear-cup touch controls on or off; it does not change gestures.
+    // Wearing control is the setting that lets the headset act on wearing detection, not a
+    // reading of whether the headphones are being worn.
+    Q_PROPERTY(QVariantMap touchPanel READ touchPanel NOTIFY controlsChanged)
+    Q_PROPERTY(QVariantMap wearingControl READ wearingControl NOTIFY controlsChanged)
 
     // Multipoint
     Q_PROPERTY(QVariantList mpDevices READ mpDevices NOTIFY multipointChanged)
@@ -206,6 +223,12 @@ public:
     void setVoiceGuidance(bool v);
     void setAutoPowerOff(int v);
 
+    QVariantMap touchPanel() const { return _touchPanel; }
+    QVariantMap wearingControl() const { return _wearingControl; }
+    // Ignored unless the control's phase is "ready".
+    Q_INVOKABLE void setTouchPanelEnabled(bool on);
+    Q_INVOKABLE void setWearingControlEnabled(bool on);
+
     QVariantList mpDevices() const { return _mpDevices; }
 
     Q_INVOKABLE void refreshDevices();
@@ -232,6 +255,7 @@ signals:
     void spatialChanged();
     void s2cChanged();
     void systemChanged();
+    void controlsChanged();
     void multipointChanged();
     void errorOccurred(const QString& message);
     void toast(const QString& message);
@@ -253,6 +277,8 @@ private:
     // Copy values the device reported into the UI state. Skips a setting while a user change
     // to it is still waiting to be sent, so a notification cannot snap the control back.
     void syncReadBack(const SettingsStatus& statuses);
+    // Re-read the discovered controls; emits controlsChanged when either map moved.
+    void syncControls();
     void refreshSettingStatus();
     void setConn(Conn c);
     void setSyncing(bool s);
@@ -343,6 +369,10 @@ private:
     bool _dsee = false;
     bool _voiceGuidance = false;
     int _autoPowerOff = 0;
+
+    // Built from the engine's snapshots (see syncControls); never edited from the UI side.
+    QVariantMap _touchPanel;
+    QVariantMap _wearingControl;
 
     QVariantList _mpDevices;
 

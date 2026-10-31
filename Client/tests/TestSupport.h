@@ -286,24 +286,21 @@ private:
 
 inline Buffer DeviceScript::toBytes(const std::string& text) { return replies::hex(text); }
 
+// Wait until the reader has read and acknowledged every reply the device has sent so far.
+inline bool settle(EngineFixture& f)
+{
+	return testing::waitFor([&] { return f.fake().quiescent(); });
+}
+
 // Deliver a reply and wait until the reader has consumed it. A frame that is (correctly)
-// ignored changes no state, so "the inbox is empty and the ACK for it went out" is the only
-// observable sign that the engine has finished with it.
+// ignored changes no state, so "the ACK for it went out" is the only observable sign that the
+// engine has finished with it. Earlier replies are waited out first: one the reader has applied
+// but not yet acknowledged would otherwise have its ACK mistaken for this frame's.
 inline bool deliver(EngineFixture& f, const Buffer& payload, DATA_TYPE table = DATA_TYPE::DATA_MDR)
 {
-	const size_t acksBefore = [&] {
-		size_t n = 0;
-		for (const auto& msg : f.fake().sentFrames())
-			if (msg.dataType == DATA_TYPE::ACK)
-				++n;
-		return n;
-	}();
+	if (!settle(f))
+		return false;
+	const size_t acksBefore = f.fake().hostAcks();
 	f.fake().enqueueData(payload, table);
-	return testing::waitFor([&] {
-		size_t n = 0;
-		for (const auto& msg : f.fake().sentFrames())
-			if (msg.dataType == DATA_TYPE::ACK)
-				++n;
-		return n > acksBefore;
-	});
+	return testing::waitFor([&] { return f.fake().hostAcks() > acksBefore; });
 }

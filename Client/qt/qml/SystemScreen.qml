@@ -86,6 +86,36 @@ Item {
             }
         }
 
+        // Controls the headphones describe themselves. The card appears once the device has
+        // described one of them; until then there is nothing honest to show. Bound to the data,
+        // not to the rows' visible: a hidden card makes its rows read as hidden too, so it could
+        // never come back.
+        Rectangle {
+            Layout.fillWidth: true
+            visible: Hp.touchPanel.phase !== "absent" || Hp.wearingControl.phase !== "absent"
+            radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
+            implicitHeight: ctlCol.implicitHeight + 2 * Theme.lg
+            ColumnLayout {
+                id: ctlCol
+                anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.md
+                Text { text: "Headphone Controls"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold; font.family: Theme.displayFont }
+                DeviceToggleRow {
+                    title: "Touch controls"
+                    // Enables or disables the panel; what each gesture does is unchanged.
+                    summary: "Turn the touch panel on the ear cup on or off. Gestures keep their current actions."
+                    control: Hp.touchPanel
+                    onToggled: (on) => Hp.setTouchPanelEnabled(on)
+                }
+                DeviceToggleRow {
+                    title: "Control by wearing detection"
+                    // The setting, not a live "worn / not worn" reading.
+                    summary: "Let the headphones respond when you put them on or take them off."
+                    control: Hp.wearingControl
+                    onToggled: (on) => Hp.setWearingControlEnabled(on)
+                }
+            }
+        }
+
         // Power management (needs a connected v1 device)
         Rectangle {
             Layout.fillWidth: true
