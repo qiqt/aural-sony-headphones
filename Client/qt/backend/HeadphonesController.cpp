@@ -187,8 +187,8 @@ bool HeadphonesController::featureAvailable(DEVICE_CAPABILITIES cap)
     case CapabilityState::Unsupported: return false;
     case CapabilityState::Unknown:     break;
     }
-    // Most v1 devices never answer the capability query at all, so Unknown is the normal case
-    // for a WH-1000XM4 as much as for a stranger. The model is what tells them apart.
+    // No valid capability reply yet (or none ever, on a device that does not answer the query):
+    // the model is what tells a WH-1000XM4 apart from a stranger.
     return _identity.recognised;
 }
 
@@ -648,7 +648,16 @@ void HeadphonesController::pump()
     }
     else if (_bt.isConnected() && _connectionInitialized && _protocol == SonyProtocol::V1)
     {
-        if (_headphones.isChanged())
+        if (_headphones.hasPendingQueries())
+        {
+            // Follow-up reads the device's own replies asked for: capability details, then
+            // availability and values. They run before writes, so a write is decided against
+            // what the device reported rather than what we assumed.
+            setSyncing(true);
+            _commandSession = _session;
+            _commandFuture.setFromAsync([this]() { _headphones.sendPendingQueries(); });
+        }
+        else if (_headphones.isChanged())
         {
             setSyncing(true);
             _settingsPushPending = true;

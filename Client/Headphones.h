@@ -3,8 +3,11 @@
 #include "BluetoothWrapper.h"
 #include "Constants.h"
 
+#include <bitset>
+#include <deque>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 // What we actually know about one device setting.
 //
@@ -32,11 +35,17 @@ enum class SettingStatus
 // the transport. isFulfilled() is revision == sentRevision, so an ACK for revision N can
 // never mark revision N+1 as sent - the stale-fulfillment bug the old value comparison had.
 //
+// current is the best belief about the device: what it last reported, or what it last ACKed.
+// reported is narrower - only what the device itself said in a RET/NTFY this session - and is
+// empty until it says something. An ACK never fills it: an ACK means the frame arrived, not that
+// the setting changed.
+//
 // Not thread-safe on its own: Headphones owns the mutex that guards every Property.
 template <class T>
 struct Property {
 	T current{};
 	T desired{};
+	std::optional<T> reported;
 	SettingStatus status = SettingStatus::Unknown;
 	unsigned long long revision = 0;
 	unsigned long long sentRevision = 0;
@@ -101,6 +110,30 @@ enum class CapabilityState
 	Unsupported
 };
 
+// Whether a supported feature can be used right now, as the device reports it. Independent of
+// its value: a feature can be on and temporarily unavailable, or available and off.
+enum class Availability
+{
+	Unknown,
+	Available,
+	Unavailable
+};
+
+// A read-only copy of one discovered on/off control (touch panel, multipoint mode, wearing
+// control). Unknown, unsupported, unavailable and off are four different answers.
+struct ToggleSnapshot
+{
+	CapabilityState support = CapabilityState::Unknown;
+	// The general-setting slot (D1-D3) the device negotiated for it, or the system selector.
+	// 0 until discovery has resolved it.
+	unsigned char selector = 0;
+	Availability availability = Availability::Unknown;
+	bool valueKnown = false;   // the device has reported the value this session
+	bool value = false;        // what the device last reported (meaningful when valueKnown)
+	bool requested = false;    // what the app last asked for
+	SettingStatus status = SettingStatus::Unknown;
+};
+
 // Thread-safety: every accessor takes _propertyMtx. setChanges() snapshots under the lock,
 // releases it while the frame is on the wire, then re-takes it to record the result - the
 // Listener thread must be able to apply incoming replies while a send is in flight.
@@ -158,13 +191,24 @@ public:
 
 	// Capabilities reported by the device.
 	unsigned int getCapabilities();
+	// True once a valid supported-functions reply (07) has arrived this session. Tracked apart
+	// from the function set itself: "the device listed nothing" and "the device has not
+	// answered" are different facts.
 	bool capabilitiesKnown();
 	// Unknown / Supported / Unsupported - the honest answer.
 	CapabilityState featureState(DEVICE_CAPABILITIES cap);
+	// The same question for any advertised function ID.
+	CapabilityState functionState(FUNCTION_TYPE fn);
 	// Convenience for UI gating: show a control unless the device said it is unsupported.
-	// Unknown counts as "show it", because plenty of v1 devices never answer the capability
-	// query at all. Use featureState() when the distinction matters.
+	// Unknown counts as "show it": which V1 devices answer the capability query has not been
+	// established on hardware. Use featureState() when the distinction matters.
 	bool supportsFeature(DEVICE_CAPABILITIES cap);
+
+	// Discovered controls. Support comes from the capability title/type the device reports
+	// (never from an assumed slot), availability and value from their own replies.
+	ToggleSnapshot getTouchPanel();
+	ToggleSnapshot getMultipointMode();
+	ToggleSnapshot getWearingControl();
 
 	// Per-setting status for the UI (see SettingStatus).
 	SettingsStatus getStatuses();
@@ -176,7 +220,14 @@ public:
 	// Replies arrive asynchronously and are applied via setStateFromReply().
 	void queryState();
 
-	// Apply an incoming DATA frame to our state. Called from the Listener thread.
+	// Follow-up requests that replies made necessary (capability details, availability and value
+	// reads). The Listener only ever enqueues them: it must stay free to read the ACKs those
+	// requests wait for. The command worker drains the queue.
+	bool hasPendingQueries();
+	void sendPendingQueries();
+
+	// Apply an incoming DATA frame to our state. Called from the Listener thread. Dispatches on
+	// (table, command, selector); a frame that fails its decoder changes nothing.
 	void setStateFromReply(const CommandSerializer::Message& msg);
 
 	void requestBattery();      // sends the GET; the reply updates state asynchronously
@@ -188,11 +239,43 @@ public:
 	void resetState();
 
 private:
+	// A control the device has to tell us about before we may touch it.
+	struct DiscoveredToggle
+	{
+		CapabilityState support = CapabilityState::Unknown;
+		unsigned char selector = 0;
+		Availability availability = Availability::Unknown;
+		Property<bool> value;
+
+		void reset();
+		ToggleSnapshot snapshot() const;
+	};
+
+	struct PendingQuery
+	{
+		Buffer payload;
+		DATA_TYPE dataType = DATA_TYPE::DATA_MDR;
+		unsigned long long generation = 0;
+	};
+
 	void queryNcAsmState();
 	void queryDeviceCapabilities();
 	void queryDevices();
 	void _connectDevice(int deviceIdx);
 	void _disconnectDevice(int deviceIdx);
+
+	// Reply handlers, one per table. Each decodes first and only then takes the lock.
+	void _applyTable1(const CommandSerializer::Message& msg);
+	void _applyTable2(const CommandSerializer::Message& msg);
+	void _applySupportedFunctions(const std::vector<unsigned char>& ids);
+	void _applyGeneralSettingCapability(const CommandSerializer::GeneralSettingCapability& cap);
+	void _applyWearingCapability(unsigned char settingType);
+
+	// Called with _propertyMtx held.
+	void _enqueueQueryLocked(Buffer payload, DATA_TYPE dataType = DATA_TYPE::DATA_MDR);
+	bool _advertisedLocked(FUNCTION_TYPE fn) const;
+	DiscoveredToggle* _generalSettingForSlotLocked(unsigned char slot);
+	void _settleUndiscoveredGeneralSettingsLocked();
 
 	// Snapshot prop under the lock, send without it, then record the outcome against the
 	// revision that was actually sent.
@@ -207,8 +290,20 @@ private:
 	int _batteryLevel = -1;
 	bool _batteryCharging = false;
 
-	unsigned int _capabilities = 0;
-	bool _capabilitiesKnown = false;
+	// Session state from capability discovery. resetState() forgets all of it, so a reconnect
+	// rediscovers instead of trusting what a previous connection - or device - advertised.
+	unsigned int _capabilities = 0;           // legacy DEVICE_CAPABILITIES view of _functions
+	bool _capabilitiesKnown = false;          // a valid 07 reply arrived this session
+	std::bitset<256> _functions;              // advertised function IDs
+	std::bitset<3> _slotsAwaitingCapability;  // advertised D1-D3 slots whose D1 reply is outstanding
+
+	DiscoveredToggle _touchPanel;
+	DiscoveredToggle _multipointMode;
+	DiscoveredToggle _wearingControl;
+
+	std::deque<PendingQuery> _queries;
+	// Bumped by resetState(). A query queued under one session is never sent in the next.
+	unsigned long long _generation = 0;
 
 	Property<bool> _ambientSoundControl;
 	Property<bool> _focusOnVoice;
@@ -308,6 +403,7 @@ inline void Property<T>::setState(const T& val)
 	const bool answersLatestIntent = this->isFulfilled() || val == this->desired;
 
 	this->current = val;
+	this->reported = val;
 
 	// Don't discard a change the user has queued but we haven't sent yet.
 	if (this->isFulfilled())
@@ -328,6 +424,7 @@ inline void Property<T>::reset(const T& val)
 {
 	this->current = val;
 	this->desired = val;
+	this->reported.reset();
 	this->status = SettingStatus::Unknown;
 	this->revision = 0;
 	this->sentRevision = 0;

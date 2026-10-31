@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <vector>
 #include <string>
 
@@ -341,6 +342,7 @@ enum class MULTI_POINT_COMMANDS : signed char
 };
 
 // Bitset of device features, populated from the capability query reply.
+// Kept for the original client; new code asks Headphones::functionState() about a FUNCTION_TYPE.
 enum DEVICE_CAPABILITIES
 {
 	NC_ASM = 0x01 << 0,
@@ -350,12 +352,191 @@ enum DEVICE_CAPABILITIES
 	SPEAK_TO_CHAT = 0x01 << 4
 };
 
-// Function-type bytes as reported inside the capability query reply.
+// Function IDs listed in the supported-functions reply (07). These name a feature the device
+// advertises - they are not command bytes: F5 here means "Speak-to-Chat exists", not the F5
+// SYSTEM_NTFY_STATUS command. Values from Sound Connect 13.3.0's FunctionType enum. The enum
+// is app-wide; a headset advertises the subset it implements.
 enum class FUNCTION_TYPE : signed char
 {
-	DEVICE_MANAGEMENT = 56,
-	VPT = 65,
-	OPTIMIZER = -127,
-	NC_ASM = 98,
-	SMART_TALKING_MODE = -11
+	BATTERY_LEVEL = 0x11,
+	UPSCALING_INDICATOR = 0x12,
+	CODEC_INDICATOR = 0x13,
+	DEVICE_MANAGEMENT = 0x38,                  // PAIRING_DEVICE_MANAGEMENT_CLASSIC_BT
+	VOICE_GUIDANCE = 0x39,
+	VPT = 0x41,
+	SOUND_POSITION = 0x42,
+	PRESET_EQ = 0x51,
+	EBB = 0x52,
+	PRESET_EQ_NONCUSTOMIZABLE = 0x53,
+	NOISE_CANCELLING = 0x61,
+	NC_ASM = 0x62,                             // NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE
+	AMBIENT_SOUND_MODE = 0x63,
+	OPTIMIZER = (signed char)0x81,             // NC_OPTIMIZER
+	GENERAL_SETTING1 = (signed char)0xD1,
+	GENERAL_SETTING2 = (signed char)0xD2,
+	GENERAL_SETTING3 = (signed char)0xD3,
+	CONNECTION_MODE = (signed char)0xE1,       // sound quality / connection priority
+	UPSCALING = (signed char)0xE2,             // DSEE setting
+	CONTROL_BY_WEARING = (signed char)0xF3,
+	AUTO_POWER_OFF = (signed char)0xF4,
+	SMART_TALKING_MODE = (signed char)0xF5,    // Speak-to-Chat
+	ASSIGNABLE_SETTINGS = (signed char)0xF6
 };
+
+// ---------------------------------------------------------------------------------------
+// Sony Tandem V1 (MDR) command bytes and selectors, recovered from Sound Connect 13.3.0 (see
+// "Sony Sound Connect 13.3.0 - Protocol Findings" in the project notes).
+//
+// A command byte means nothing without its table: table 1 travels as DATA_MDR (0x0C), table 2
+// as DATA_MDR_NO2 (0x0E), and the two reuse numbers - table-1 0x48 is VPT_SET_PARAM while
+// table-2 0x48 is VOICE_GUIDANCE_SET_PARAM. Replies are therefore dispatched on
+// (table, command, selector), never on the command byte alone.
+//
+// Evidence level: static serializers/decoders from the APK. Only the NC/ASM, battery, optimizer
+// and paired-device paths have been exercised against a WH-1000XM4; see PROTOCOL.md.
+// ---------------------------------------------------------------------------------------
+namespace v1
+{
+	// Table 1 (DATA_MDR) commands.
+	namespace t1
+	{
+		inline constexpr unsigned char CONNECT_GET_PROTOCOL_INFO = 0x00;
+		inline constexpr unsigned char CONNECT_GET_SUPPORT_FUNCTION = 0x06;
+		inline constexpr unsigned char CONNECT_RET_SUPPORT_FUNCTION = 0x07;
+		inline constexpr unsigned char COMMON_GET_BATTERY_LEVEL = 0x10;
+		inline constexpr unsigned char COMMON_RET_BATTERY_LEVEL = 0x11;
+		inline constexpr unsigned char COMMON_NTFY_BATTERY_LEVEL = 0x13;
+		inline constexpr unsigned char COMMON_RET_UPSCALING_EFFECT = 0x15;
+		inline constexpr unsigned char COMMON_NTFY_UPSCALING_EFFECT = 0x17;
+		inline constexpr unsigned char VPT_GET_PARAM = 0x46;
+		inline constexpr unsigned char VPT_RET_PARAM = 0x47;
+		inline constexpr unsigned char VPT_SET_PARAM = 0x48;
+		inline constexpr unsigned char VPT_NTFY_PARAM = 0x49;
+		inline constexpr unsigned char EQEBB_GET_PARAM = 0x56;
+		inline constexpr unsigned char EQEBB_RET_PARAM = 0x57;
+		inline constexpr unsigned char EQEBB_SET_PARAM = 0x58;
+		inline constexpr unsigned char EQEBB_NTFY_PARAM = 0x59;
+		inline constexpr unsigned char NCASM_GET_PARAM = 0x66;
+		inline constexpr unsigned char NCASM_RET_PARAM = 0x67;
+		inline constexpr unsigned char NCASM_SET_PARAM = 0x68;
+		inline constexpr unsigned char NCASM_NTFY_PARAM = 0x69;
+		inline constexpr unsigned char OPT_NTFY_STATUS = 0x85;
+		inline constexpr unsigned char ALERT_SET_STATUS = 0x94;
+		inline constexpr unsigned char ALERT_SET_PARAM = 0x98;
+		inline constexpr unsigned char ALERT_NTFY_PARAM = 0x99;
+		inline constexpr unsigned char GENERAL_SETTING_GET_CAPABILITY = 0xD0;
+		inline constexpr unsigned char GENERAL_SETTING_RET_CAPABILITY = 0xD1;
+		inline constexpr unsigned char GENERAL_SETTING_GET_STATUS = 0xD2;
+		inline constexpr unsigned char GENERAL_SETTING_RET_STATUS = 0xD3;
+		inline constexpr unsigned char GENERAL_SETTING_NTFY_STATUS = 0xD5;
+		inline constexpr unsigned char GENERAL_SETTING_GET_PARAM = 0xD6;
+		inline constexpr unsigned char GENERAL_SETTING_RET_PARAM = 0xD7;
+		inline constexpr unsigned char GENERAL_SETTING_SET_PARAM = 0xD8;
+		inline constexpr unsigned char GENERAL_SETTING_NTFY_PARAM = 0xD9;
+		inline constexpr unsigned char AUDIO_GET_PARAM = 0xE6;
+		inline constexpr unsigned char AUDIO_RET_PARAM = 0xE7;
+		inline constexpr unsigned char AUDIO_SET_PARAM = 0xE8;
+		inline constexpr unsigned char AUDIO_NTFY_PARAM = 0xE9;
+		inline constexpr unsigned char SYSTEM_GET_CAPABILITY = 0xF0;
+		inline constexpr unsigned char SYSTEM_RET_CAPABILITY = 0xF1;
+		inline constexpr unsigned char SYSTEM_GET_STATUS = 0xF2;
+		inline constexpr unsigned char SYSTEM_RET_STATUS = 0xF3;
+		inline constexpr unsigned char SYSTEM_NTFY_STATUS = 0xF5;
+		inline constexpr unsigned char SYSTEM_GET_PARAM = 0xF6;
+		inline constexpr unsigned char SYSTEM_RET_PARAM = 0xF7;
+		inline constexpr unsigned char SYSTEM_SET_PARAM = 0xF8;
+		inline constexpr unsigned char SYSTEM_NTFY_PARAM = 0xF9;
+		inline constexpr unsigned char SYSTEM_GET_EXTENDED_PARAM = 0xFA;
+		inline constexpr unsigned char SYSTEM_RET_EXTENDED_PARAM = 0xFB;
+		inline constexpr unsigned char SYSTEM_SET_EXTENDED_PARAM = 0xFC;
+		inline constexpr unsigned char SYSTEM_NTFY_EXTENDED_PARAM = 0xFD;
+	}
+
+	// Table 2 (DATA_MDR_NO2) commands.
+	namespace t2
+	{
+		inline constexpr unsigned char PERIPHERAL_GET_PARAM = 0x36;
+		inline constexpr unsigned char PERIPHERAL_RET_PARAM = 0x37;
+		inline constexpr unsigned char PERIPHERAL_NTFY_PARAM = 0x39;
+		inline constexpr unsigned char VOICE_GUIDANCE_GET_PARAM = 0x46;
+		inline constexpr unsigned char VOICE_GUIDANCE_RET_PARAM = 0x47;
+		inline constexpr unsigned char VOICE_GUIDANCE_SET_PARAM = 0x48;
+		inline constexpr unsigned char VOICE_GUIDANCE_NTFY_PARAM = 0x49;
+	}
+
+	// Selectors: the inquired-type byte that follows a command.
+	inline constexpr unsigned char SUPPORT_FUNCTION_INQUIRY = 0x01;   // 06 01 -> 07 01 count ids...
+	inline constexpr unsigned char BATTERY_SINGLE = 0x00;
+	inline constexpr unsigned char NC_OPTIMIZER = 0x01;
+	inline constexpr unsigned char EQ_PRESET = 0x01;
+	inline constexpr unsigned char AUDIO_CONNECTION_MODE = 0x01;
+	inline constexpr unsigned char AUDIO_UPSCALING = 0x02;
+	inline constexpr unsigned char SYSTEM_CONTROL_BY_WEARING = 0x03; // from the KMP repository, not the legacy enum
+	inline constexpr unsigned char SYSTEM_AUTO_POWER_OFF = 0x04;
+	inline constexpr unsigned char SYSTEM_SMART_TALKING = 0x05;
+	inline constexpr unsigned char SYSTEM_ASSIGNABLE = 0x06;
+	inline constexpr unsigned char ALERT_FIXED_MESSAGE = 0x01;
+	inline constexpr unsigned char VOICE_GUIDANCE_SETTING = 0x01;
+	inline constexpr unsigned char VOICE_GUIDANCE_DETAIL_ON_OFF = 0x01;
+	inline constexpr unsigned char PERIPHERAL_CLASSIC_BT = 0x01;
+
+	// General settings. D1/D2/D3 are slots negotiated per device: a feature is found by the
+	// title its capability reports, never by assuming which slot it occupies.
+	inline constexpr unsigned char GS_SLOT_1 = 0xD1;
+	inline constexpr unsigned char GS_SLOT_2 = 0xD2;
+	inline constexpr unsigned char GS_SLOT_3 = 0xD3;
+	inline constexpr unsigned char GS_LANGUAGE_ENGLISH = 0x01;
+	inline constexpr unsigned char GS_STRING_FORMAT_ENUM_NAME = 0x02;
+	inline constexpr unsigned char GS_TYPE_BOOLEAN = 0x01;
+	inline constexpr unsigned char GS_TYPE_LIST = 0x02;
+	inline constexpr size_t GS_MAX_STRING_BYTES = 128;
+	inline constexpr const char* GS_TITLE_TOUCH_PANEL = "TOUCH_PANEL_SETTING";
+	inline constexpr const char* GS_TITLE_MULTIPOINT = "MULTIPOINT_SETTING";
+
+	inline constexpr bool isGeneralSettingSlot(unsigned char slot)
+	{
+		return slot == GS_SLOT_1 || slot == GS_SLOT_2 || slot == GS_SLOT_3;
+	}
+
+	// Two unrelated "on/off type" bytes that happen to look alike - never reuse one for the other:
+	// general settings say BOOLEAN_TYPE (01), wearing control says ProtocolSettingType.ON_OFF (00).
+	inline constexpr unsigned char PROTOCOL_SETTING_TYPE_ON_OFF = 0x00;
+
+	// Availability (CommonStatus). The polarity is the opposite of an on/off value: 00 = available.
+	inline constexpr unsigned char STATUS_ENABLE = 0x00;
+	inline constexpr unsigned char STATUS_DISABLE = 0x01;
+
+	// Speak-to-Chat. The RET and the NTFY of the same toggle use different sub-type enums.
+	inline constexpr unsigned char S2C_SETTING_TYPE_ON_OFF = 0x00;   // F7 05 00 v
+	inline constexpr unsigned char S2C_PARAM_MODE_ON_OFF = 0x01;     // F8/F9 05 01 v
+	inline constexpr unsigned char S2C_PARAM_PREVIEW_ON_OFF = 0x02;  // F9 05 02 v - a preview, not the setting
+	inline constexpr unsigned char S2C_DETAIL_TYPE_1 = 0x00;         // FB/FC/FD 05 00 ...
+
+	inline constexpr unsigned char UPSCALING_SETTING_AUTO_OFF = 0x00; // E7/E8/E9 02 00 v
+
+	// Auto power-off: one parameter type carrying two element IDs.
+	inline constexpr unsigned char APO_ACTIVE_AND_SELECT_TIME = 0x01;
+	inline constexpr unsigned char APO_ELEMENT_5_MIN = 0x00;
+	inline constexpr unsigned char APO_ELEMENT_30_MIN = 0x01;
+	inline constexpr unsigned char APO_ELEMENT_60_MIN = 0x02;
+	inline constexpr unsigned char APO_ELEMENT_180_MIN = 0x03;
+	inline constexpr unsigned char APO_ELEMENT_WHEN_REMOVED = 0x10;
+	inline constexpr unsigned char APO_ELEMENT_DISABLED = 0x11;
+
+	inline constexpr bool isAutoPowerOffElement(unsigned char e)
+	{
+		return e <= APO_ELEMENT_180_MIN || e == APO_ELEMENT_WHEN_REMOVED || e == APO_ELEMENT_DISABLED;
+	}
+	inline constexpr bool isTimedAutoPowerOffElement(unsigned char e)
+	{
+		return e <= APO_ELEMENT_180_MIN;
+	}
+
+	// Fixed-message alerts (94/98/99 01 ...).
+	inline constexpr unsigned char ALERT_MSG_MULTIPOINT_TO_ON = 0x06;   // Sony shows its LDAC-disable caution
+	inline constexpr unsigned char ALERT_MSG_MULTIPOINT_TO_OFF = 0x07;
+	inline constexpr unsigned char ALERT_ACTION_CONFIRMATION_ONLY = 0x00;
+	inline constexpr unsigned char ALERT_ACTION_POSITIVE_NEGATIVE = 0x01;
+	inline constexpr unsigned char ALERT_RESPONSE_NEGATIVE = 0x00;
+	inline constexpr unsigned char ALERT_RESPONSE_POSITIVE = 0x01;
+}

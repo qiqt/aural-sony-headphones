@@ -12,6 +12,7 @@
 
 #include "FakeBluetoothConnector.h"
 #include "TestHarness.h"
+#include "TestSupport.h"
 
 #include <QCoreApplication>
 #include <QSignalSpy>
@@ -232,6 +233,44 @@ TEST(controller_recognised_v1_device_keeps_the_full_control_surface)
 	CHECK(f.hp->spatialAvailable());
 	CHECK(f.hp->systemSettingsAvailable());
 	CHECK(f.hp->equalizerAvailable());
+}
+
+// The capability reply's follow-up requests are queued by the reader and put on the wire by the
+// controller's command worker - the reader itself must stay free to receive their ACKs.
+TEST(controller_discovery_follow_ups_are_sent_by_the_command_worker)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 03 62 D1 F3"))
+		.on("D0 D1 01", replies::generalSettingCapability(0xD1, v1::GS_TITLE_TOUCH_PANEL))
+		.on("F0 03", replies::hex("F1 03 00"));
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+
+	CHECK_MSG(spinUntil([&] { return wasSent(*f.fake, "D6 D1") && wasSent(*f.fake, "F6 03"); }),
+		"discovery should end in availability and value reads for what the device described");
+	CHECK(wasSent(*f.fake, "D2 D1"));
+	CHECK(wasSent(*f.fake, "F2 03"));
+	CHECK(f.hp->capabilitiesKnown());
+	CHECK(f.hp->connected());
+}
+
+// A bounded reply is an answer: what it does not list is withdrawn, even for a model we know.
+TEST(controller_capability_reply_withdraws_unadvertised_controls)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 01 62"));
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+
+	CHECK(spinUntil([&] { return f.hp->capabilitiesKnown(); }));
+	CHECK(f.hp->ambientAvailable());
+	CHECK(!f.hp->spatialAvailable());
+	CHECK(!f.hp->supportsSpeakToChat());
+	CHECK(!f.hp->supportsMultipoint());
 }
 
 int main(int argc, char* argv[])

@@ -1,6 +1,8 @@
 #pragma once
 #include "Constants.h"
 #include <cstddef>
+#include <optional>
+#include <string>
 #include <vector>
 #include <stdexcept>
 #include "Exceptions.h"
@@ -58,5 +60,101 @@ namespace CommandSerializer
 	Buffer serializeAudioUpsampling(bool enabled);   // DSEE / DSEE Extreme; send as DATA_MDR
 	Buffer serializeVoiceGuidance(bool enabled);     // voice guidance; send as DATA_MDR_NO2
 	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode);
+
+	// ---- discovery and read queries (all table 1 / DATA_MDR) --------------------------------
+	Buffer serializeSupportedFunctionsQuery();                         // 06 01
+	Buffer serializeGeneralSettingCapabilityQuery(unsigned char slot); // D0 slot 01 (English)
+	Buffer serializeGeneralSettingStatusQuery(unsigned char slot);     // D2 slot
+	Buffer serializeGeneralSettingQuery(unsigned char slot);           // D6 slot
+	Buffer serializeSystemCapabilityQuery(unsigned char selector);     // F0 selector
+	Buffer serializeSystemStatusQuery(unsigned char selector);         // F2 selector
+	Buffer serializeSystemQuery(unsigned char selector);               // F6 selector
+
+	// ---- bounded reply decoders ---------------------------------------------------------------
+	// Each decoder checks the table (data type), the command, the selector and the exact length
+	// before it reads a byte, and validates every enumerated value. nullopt means "this frame is
+	// not that reply" - malformed, truncated, from the other table, or carrying a value outside
+	// the recovered enum - and the caller must leave its state exactly as it was.
+
+	// 07 01 count ids... -> the advertised function IDs (count honoured, headers excluded).
+	std::optional<std::vector<unsigned char>> parseSupportedFunctions(const Message& msg);
+
+	// 11/13 00 level charging (single battery only).
+	struct BatteryReport
+	{
+		int level = 0;
+		bool charging = false;
+	};
+	std::optional<BatteryReport> parseBattery(const Message& msg);
+
+	// 67/69 02 effect ncType ncValue asmType asmId asmLevel. Every field is kept: the NC setting
+	// type and value are needed to tell some modes apart, not only the effect and level.
+	struct NcAsmReport
+	{
+		unsigned char effect = 0;          // NC_ASM_EFFECT
+		unsigned char ncSettingType = 0;   // NC_ASM_SETTING_TYPE
+		unsigned char ncValue = 0;         // meaning depends on ncSettingType
+		unsigned char asmSettingType = 0;  // ASM_SETTING_TYPE
+		unsigned char asmId = 0;           // ASM_ID
+		unsigned char asmLevel = 0;        // raw byte; the client writes 0xFF while ambient is off
+
+		bool operator==(const NcAsmReport& o) const
+		{
+			return effect == o.effect && ncSettingType == o.ncSettingType && ncValue == o.ncValue &&
+				asmSettingType == o.asmSettingType && asmId == o.asmId && asmLevel == o.asmLevel;
+		}
+	};
+	std::optional<NcAsmReport> parseNcAsm(const Message& msg);
+
+	// 85 01 status ... (NC optimizer). true while the optimizer reports a non-idle status.
+	std::optional<bool> parseOptimizerStatus(const Message& msg);
+
+	// Table 2: 37/39 01 count { 17-byte MAC, slot, nameLength, name }*
+	struct PairedDevice
+	{
+		std::string mac;
+		std::string name;
+		unsigned char slot = 0;   // 1 / 2 = connected in that position, otherwise just paired
+	};
+	std::optional<std::vector<PairedDevice>> parsePairedDevices(const Message& msg);
+
+	// D1 slot format titleLen title summaryLen summary type [type-specific data]. Lengths are
+	// UTF-8 byte counts, at most GS_MAX_STRING_BYTES each.
+	struct GeneralSettingCapability
+	{
+		unsigned char slot = 0;
+		unsigned char stringFormat = 0;   // GS_STRING_FORMAT_ENUM_NAME for a named setting
+		std::string title;
+		std::string summary;
+		unsigned char settingType = 0;    // GS_TYPE_BOOLEAN / GS_TYPE_LIST / ...
+		size_t typeSpecificBytes = 0;     // capability data after the type byte (lists carry some)
+	};
+	std::optional<GeneralSettingCapability> parseGeneralSettingCapability(const Message& msg);
+	// Sony matches a title only when the record uses the ENUM_NAME string format.
+	bool namesGeneralSetting(const GeneralSettingCapability& cap, const char* title);
+	// A plain boolean: BOOLEAN_TYPE with no type-specific data after it. A list type carries an
+	// index, not a bool, and must not be coerced into one.
+	bool isBooleanGeneralSetting(const GeneralSettingCapability& cap);
+
+	// D3/D5 slot status, F3/F5 03 status. available == (status == STATUS_ENABLE).
+	struct AvailabilityReport
+	{
+		unsigned char selector = 0;   // general-setting slot, or the system selector
+		bool available = false;
+	};
+	std::optional<AvailabilityReport> parseGeneralSettingAvailability(const Message& msg);
+	std::optional<AvailabilityReport> parseWearingAvailability(const Message& msg);
+
+	// D7/D9 slot 01 value (boolean general setting), F7/F9 03 00 value (wearing control).
+	struct ToggleReport
+	{
+		unsigned char selector = 0;
+		bool enabled = false;
+	};
+	std::optional<ToggleReport> parseGeneralSettingBool(const Message& msg);
+	std::optional<ToggleReport> parseWearingSetting(const Message& msg);
+
+	// F1 03 type -> the setting type the device uses for wearing control.
+	std::optional<unsigned char> parseWearingCapability(const Message& msg);
 }
 

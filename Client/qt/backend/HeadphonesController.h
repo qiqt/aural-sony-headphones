@@ -49,8 +49,9 @@ class HeadphonesController : public QObject
     Q_PROPERTY(int batteryLevel READ batteryLevel NOTIFY batteryChanged)
     Q_PROPERTY(bool batteryCharging READ batteryCharging NOTIFY batteryChanged)
 
-    // Capabilities. Most v1 devices never reply to the capability query, so the answer is
-    // usually Unknown; capabilitiesKnown says whether it is an answer at all.
+    // Capabilities. capabilitiesKnown says whether a valid supported-functions reply (07) has
+    // arrived this session; until then every answer is Unknown. Whether a given V1 model answers
+    // the query at all has not been established on hardware yet (see PROTOCOL.md).
     //
     // What we do with Unknown depends on whether we recognise the device (SON-11): for a model
     // this client has code paths for, Unknown means "the device just doesn't answer that query"

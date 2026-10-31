@@ -9,8 +9,11 @@
 #include "TestHarness.h"
 
 #include <atomic>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <vector>
 
 class EngineFixture
 {
@@ -106,14 +109,201 @@ inline Buffer battery(int level, bool charging = false)
 	return payload;
 }
 
-// Capability reply: [cmd] followed by the function-type bytes the device supports.
+// Supported-functions reply: [07][01 inquiry][count][function IDs...].
 inline Buffer capabilities(std::vector<FUNCTION_TYPE> functions)
 {
 	Buffer payload;
-	payload.push_back(static_cast<char>(COMMAND_TYPE::CAPABILITY_QUERY_RESPONSE));
+	payload.push_back(static_cast<char>(v1::t1::CONNECT_RET_SUPPORT_FUNCTION));
+	payload.push_back(static_cast<char>(v1::SUPPORT_FUNCTION_INQUIRY));
+	payload.push_back(static_cast<char>(functions.size()));
 	for (auto fn : functions)
 		payload.push_back(static_cast<char>(fn));
 	return payload;
 }
 
+// Bytes written as hex, e.g. hex("D8 D2 01 01"). Keeps packet vectors readable and identical
+// to the ones in the protocol notes and the Python reference.
+inline Buffer hex(const std::string& text)
+{
+	Buffer out;
+	int nibbles = 0;
+	int value = 0;
+	for (char c : text)
+	{
+		int digit;
+		if (c >= '0' && c <= '9') digit = c - '0';
+		else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+		else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+		else continue;
+		value = value * 16 + digit;
+		if (++nibbles == 2)
+		{
+			out.push_back(static_cast<char>(value));
+			nibbles = 0;
+			value = 0;
+		}
+	}
+	return out;
+}
+
+// General-setting capability: [D1][slot][02 ENUM_NAME][len][title][len][summary][01 BOOLEAN].
+inline Buffer generalSettingCapability(unsigned char slot, const std::string& title,
+	const std::string& summary = "", unsigned char type = v1::GS_TYPE_BOOLEAN)
+{
+	Buffer payload = { static_cast<char>(v1::t1::GENERAL_SETTING_RET_CAPABILITY), static_cast<char>(slot),
+		static_cast<char>(v1::GS_STRING_FORMAT_ENUM_NAME), static_cast<char>(title.size()) };
+	payload.insert(payload.end(), title.begin(), title.end());
+	payload.push_back(static_cast<char>(summary.size()));
+	payload.insert(payload.end(), summary.begin(), summary.end());
+	payload.push_back(static_cast<char>(type));
+	return payload;
+}
+
 } // namespace replies
+
+// The payload of every command the host has sent so far, as hex strings ("D0 D2 01"), so a
+// test can assert on exact bytes and print something readable when it fails.
+inline std::string toHex(const Buffer& bytes)
+{
+	static const char* digits = "0123456789ABCDEF";
+	std::string out;
+	for (size_t i = 0; i < bytes.size(); ++i)
+	{
+		if (i) out.push_back(' ');
+		const unsigned char b = static_cast<unsigned char>(bytes[i]);
+		out.push_back(digits[b >> 4]);
+		out.push_back(digits[b & 0x0F]);
+	}
+	return out;
+}
+
+inline std::vector<std::string> sentPayloads(FakeBluetoothConnector& fake, DATA_TYPE table = DATA_TYPE::DATA_MDR)
+{
+	std::vector<std::string> out;
+	for (const auto& msg : fake.sentCommands())
+		if (msg.dataType == table)
+			out.push_back(toHex(msg.messageBytes));
+	return out;
+}
+
+inline bool wasSent(FakeBluetoothConnector& fake, const std::string& payloadHex, DATA_TYPE table = DATA_TYPE::DATA_MDR)
+{
+	const std::string wanted = toHex(replies::hex(payloadHex));
+	for (const auto& sent : sentPayloads(fake, table))
+		if (sent == wanted)
+			return true;
+	return false;
+}
+
+inline size_t countSent(FakeBluetoothConnector& fake, const std::string& payloadHex, DATA_TYPE table = DATA_TYPE::DATA_MDR)
+{
+	const std::string wanted = toHex(replies::hex(payloadHex));
+	size_t n = 0;
+	for (const auto& sent : sentPayloads(fake, table))
+		if (sent == wanted)
+			++n;
+	return n;
+}
+
+// A headset that ACKs every command and answers the requests it has a rule for, in the order a
+// real device does: the ACK first, then the RET. Rules live behind a shared_ptr so the script
+// stays valid however the test orders its locals.
+class DeviceScript
+{
+public:
+	using Hook = std::function<void(FakeBluetoothConnector&, const CommandSerializer::Message&)>;
+
+	DeviceScript() : _rules(std::make_shared<Rules>()) {}
+
+	// When the host sends exactly `requestHex` on `requestTable`, reply with `reply`.
+	DeviceScript& on(const std::string& requestHex, const Buffer& reply,
+		DATA_TYPE replyTable = DATA_TYPE::DATA_MDR, DATA_TYPE requestTable = DATA_TYPE::DATA_MDR)
+	{
+		std::lock_guard<std::mutex> guard(_rules->mtx);
+		_rules->list.push_back(Rule{ requestTable, toBytes(requestHex), reply, replyTable, nullptr });
+		return *this;
+	}
+
+	// Run arbitrary device behaviour when that request arrives (after its ACK).
+	DeviceScript& onRequest(const std::string& requestHex, Hook hook, DATA_TYPE requestTable = DATA_TYPE::DATA_MDR)
+	{
+		std::lock_guard<std::mutex> guard(_rules->mtx);
+		_rules->list.push_back(Rule{ requestTable, toBytes(requestHex), {}, DATA_TYPE::DATA_MDR, std::move(hook) });
+		return *this;
+	}
+
+	// Forget the rules for one request (e.g. the device stops answering it).
+	void remove(const std::string& requestHex)
+	{
+		const Buffer bytes = toBytes(requestHex);
+		std::lock_guard<std::mutex> guard(_rules->mtx);
+		auto& list = _rules->list;
+		list.erase(std::remove_if(list.begin(), list.end(), [&](const Rule& r) { return r.request == bytes; }), list.end());
+	}
+
+	void installOn(FakeBluetoothConnector& fake)
+	{
+		auto rules = _rules;
+		fake.setScript([rules](FakeBluetoothConnector& device, const CommandSerializer::Message& msg) {
+			if (msg.dataType == DATA_TYPE::ACK)
+				return;
+			device.enqueueAck(msg.seqNumber);
+			std::vector<Rule> matched;
+			{
+				std::lock_guard<std::mutex> guard(rules->mtx);
+				for (const auto& rule : rules->list)
+					if (rule.requestTable == msg.dataType && rule.request == msg.messageBytes)
+						matched.push_back(rule);
+			}
+			for (const auto& rule : matched)
+			{
+				if (rule.hook)
+					rule.hook(device, msg);
+				else
+					device.enqueueData(rule.reply, rule.replyTable);
+			}
+		});
+	}
+
+private:
+	static Buffer toBytes(const std::string& text);
+
+	struct Rule
+	{
+		DATA_TYPE requestTable;
+		Buffer request;
+		Buffer reply;
+		DATA_TYPE replyTable;
+		Hook hook;
+	};
+	struct Rules
+	{
+		std::mutex mtx;
+		std::vector<Rule> list;
+	};
+	std::shared_ptr<Rules> _rules;
+};
+
+inline Buffer DeviceScript::toBytes(const std::string& text) { return replies::hex(text); }
+
+// Deliver a reply and wait until the reader has consumed it. A frame that is (correctly)
+// ignored changes no state, so "the inbox is empty and the ACK for it went out" is the only
+// observable sign that the engine has finished with it.
+inline bool deliver(EngineFixture& f, const Buffer& payload, DATA_TYPE table = DATA_TYPE::DATA_MDR)
+{
+	const size_t acksBefore = [&] {
+		size_t n = 0;
+		for (const auto& msg : f.fake().sentFrames())
+			if (msg.dataType == DATA_TYPE::ACK)
+				++n;
+		return n;
+	}();
+	f.fake().enqueueData(payload, table);
+	return testing::waitFor([&] {
+		size_t n = 0;
+		for (const auto& msg : f.fake().sentFrames())
+			if (msg.dataType == DATA_TYPE::ACK)
+				++n;
+		return n > acksBefore;
+	});
+}

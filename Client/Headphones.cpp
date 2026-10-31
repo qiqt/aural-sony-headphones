@@ -159,9 +159,61 @@ CapabilityState Headphones::featureState(DEVICE_CAPABILITIES cap)
 	return (this->_capabilities & cap) ? CapabilityState::Supported : CapabilityState::Unsupported;
 }
 
+CapabilityState Headphones::functionState(FUNCTION_TYPE fn)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_capabilitiesKnown)
+		return CapabilityState::Unknown;
+	return this->_advertisedLocked(fn) ? CapabilityState::Supported : CapabilityState::Unsupported;
+}
+
 bool Headphones::supportsFeature(DEVICE_CAPABILITIES cap)
 {
 	return this->featureState(cap) != CapabilityState::Unsupported;
+}
+
+bool Headphones::_advertisedLocked(FUNCTION_TYPE fn) const
+{
+	return this->_capabilitiesKnown && this->_functions.test(static_cast<unsigned char>(fn));
+}
+
+void Headphones::DiscoveredToggle::reset()
+{
+	this->support = CapabilityState::Unknown;
+	this->selector = 0;
+	this->availability = Availability::Unknown;
+	this->value.reset(false);
+}
+
+ToggleSnapshot Headphones::DiscoveredToggle::snapshot() const
+{
+	ToggleSnapshot s;
+	s.support = this->support;
+	s.selector = this->selector;
+	s.availability = this->availability;
+	s.valueKnown = this->value.reported.has_value();
+	s.value = this->value.reported.value_or(false);
+	s.requested = this->value.desired;
+	s.status = this->value.status;
+	return s;
+}
+
+ToggleSnapshot Headphones::getTouchPanel()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_touchPanel.snapshot();
+}
+
+ToggleSnapshot Headphones::getMultipointMode()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_multipointMode.snapshot();
+}
+
+ToggleSnapshot Headphones::getWearingControl()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_wearingControl.snapshot();
 }
 
 SettingsStatus Headphones::getStatuses()
@@ -519,7 +571,45 @@ void Headphones::queryNcAsmState()
 
 void Headphones::queryDeviceCapabilities()
 {
-	this->_conn.sendCommand({ static_cast<char>(COMMAND_TYPE::CAPABILITY_QUERY), 0x01 });
+	// The 07 reply schedules everything that depends on it (see _applySupportedFunctions).
+	this->_conn.sendCommand(CommandSerializer::serializeSupportedFunctionsQuery());
+}
+
+bool Headphones::hasPendingQueries()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return !this->_queries.empty();
+}
+
+void Headphones::sendPendingQueries()
+{
+	// Pop one query at a time and send it without the lock: the Listener needs the lock to apply
+	// the reply, and may enqueue further queries while this one waits for its ACK.
+	for (;;)
+	{
+		PendingQuery query;
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			if (this->_queries.empty())
+				return;
+			query = std::move(this->_queries.front());
+			this->_queries.pop_front();
+			// resetState() clears the queue, so this only guards against a query that was popped
+			// by a worker from a session that has since ended.
+			if (query.generation != this->_generation)
+				continue;
+		}
+		this->_conn.sendCommand(query.payload, query.dataType);
+	}
+}
+
+void Headphones::_enqueueQueryLocked(Buffer payload, DATA_TYPE dataType)
+{
+	// The same read queued twice would only ask the same question twice.
+	for (const auto& queued : this->_queries)
+		if (queued.dataType == dataType && queued.payload == payload)
+			return;
+	this->_queries.push_back(PendingQuery{ std::move(payload), dataType, this->_generation });
 }
 
 void Headphones::queryDevices()
@@ -565,127 +655,287 @@ void Headphones::requestBattery()
 
 void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 {
-	const Buffer& bytes = msg.messageBytes;
-	if (bytes.empty())
+	if (msg.messageBytes.empty())
 		return;
 
-	unsigned char cmd = static_cast<unsigned char>(bytes[0]);
-	switch (cmd)
+	// The table comes first: the two command tables reuse numbers (table-1 0x48 is VPT,
+	// table-2 0x48 is voice guidance), so a command byte alone does not name a reply.
+	switch (msg.dataType)
 	{
-	case BATTERY_LEVEL_RET:
-	case BATTERY_LEVEL_NOTIFY:
-	{
-		// Payload: [cmd][batteryType][level 0-100][chargingStatus]
-		if (bytes.size() >= 4)
-		{
-			std::lock_guard guard(this->_propertyMtx);
-			this->_batteryLevel = static_cast<unsigned char>(bytes[2]);
-			this->_batteryCharging = bytes[3] != 0;
-		}
+	case DATA_TYPE::DATA_MDR:
+		this->_applyTable1(msg);
+		break;
+	case DATA_TYPE::DATA_MDR_NO2:
+		this->_applyTable2(msg);
+		break;
+	default:
 		break;
 	}
+}
 
-	case static_cast<unsigned char>(COMMAND_TYPE::NCASM_RET_PARAM):
-	case static_cast<unsigned char>(COMMAND_TYPE::NCASM_NTFY_PARAM):
+void Headphones::_applyTable1(const CommandSerializer::Message& msg)
+{
+	using namespace CommandSerializer;
+
+	switch (static_cast<unsigned char>(msg.messageBytes[0]))
 	{
-		// Same 8-byte layout as SET: [cmd][inquiredType][effect][ncSettingType][dualSingle]
-		// [asmSettingType][asmId][asmLevel]. Sent as RET on our GET and as NOTIFY when the
-		// state changes on the device itself (e.g. the physical ANC button).
-		if (bytes.size() >= 8 &&
-			bytes[1] == static_cast<char>(NC_ASM_INQUIRED_TYPE::NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE))
-		{
-			bool effectOn = bytes[2] != static_cast<char>(NC_ASM_EFFECT::OFF);
-			bool voice = bytes[6] == static_cast<char>(ASM_ID::VOICE);
-			int level = static_cast<unsigned char>(bytes[7]);
+	case v1::t1::CONNECT_RET_SUPPORT_FUNCTION:
+		if (auto ids = parseSupportedFunctions(msg))
+			this->_applySupportedFunctions(*ids);
+		break;
 
+	case v1::t1::COMMON_RET_BATTERY_LEVEL:
+	case v1::t1::COMMON_NTFY_BATTERY_LEVEL:
+		if (auto battery = parseBattery(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_batteryLevel = battery->level;
+			this->_batteryCharging = battery->charging;
+		}
+		break;
+
+	case v1::t1::NCASM_RET_PARAM:
+	case v1::t1::NCASM_NTFY_PARAM:
+		// RET answers our GET; NTFY reports a change made on the device itself (the physical
+		// ANC button).
+		if (auto ncAsm = parseNcAsm(msg))
+		{
+			const bool effectOn = ncAsm->effect != static_cast<unsigned char>(NC_ASM_EFFECT::OFF);
+			const bool voice = ncAsm->asmId == static_cast<unsigned char>(ASM_ID::VOICE);
 			std::lock_guard guard(this->_propertyMtx);
 			this->_ambientSoundControl.setState(effectOn);
 			this->_focusOnVoice.setState(voice);
-			this->_asmLevel.setState(level);
+			this->_asmLevel.setState(ncAsm->asmLevel);
 		}
 		break;
-	}
 
-	case static_cast<unsigned char>(COMMAND_TYPE::XM4_OPTIMIZER_RESPONSE):
-	{
-		if (bytes.size() >= 3)
+	case v1::t1::OPT_NTFY_STATUS:
+		if (auto optimizing = parseOptimizerStatus(msg))
 		{
-			auto state = (bytes[2] != 0x00) ? OPTIMIZER_STATE::OPTIMIZING : OPTIMIZER_STATE::IDLE;
 			std::lock_guard guard(this->_propertyMtx);
-			this->_optimizerState.setState(state);
+			this->_optimizerState.setState(*optimizing ? OPTIMIZER_STATE::OPTIMIZING : OPTIMIZER_STATE::IDLE);
 		}
 		break;
-	}
 
-	case static_cast<unsigned char>(COMMAND_TYPE::CAPABILITY_QUERY_RESPONSE):
-	{
-		unsigned int caps = 0;
-		for (char c : bytes)
+	case v1::t1::COMMON_RET_UPSCALING_EFFECT:
+	case v1::t1::COMMON_NTFY_UPSCALING_EFFECT:
+		// The "DSEE is processing right now" indicator. It is not the DSEE setting (E7/E9) and
+		// must never be read as one: enabled and actively upscaling are different facts.
+		break;
+
+	case v1::t1::GENERAL_SETTING_RET_CAPABILITY:
+		if (auto cap = parseGeneralSettingCapability(msg))
+			this->_applyGeneralSettingCapability(*cap);
+		break;
+
+	case v1::t1::GENERAL_SETTING_RET_STATUS:
+	case v1::t1::GENERAL_SETTING_NTFY_STATUS:
+		if (auto status = parseGeneralSettingAvailability(msg))
 		{
-			switch (c)
+			std::lock_guard guard(this->_propertyMtx);
+			if (DiscoveredToggle* toggle = this->_generalSettingForSlotLocked(status->selector))
+				toggle->availability = status->available ? Availability::Available : Availability::Unavailable;
+		}
+		break;
+
+	case v1::t1::GENERAL_SETTING_RET_PARAM:
+	case v1::t1::GENERAL_SETTING_NTFY_PARAM:
+		if (auto value = parseGeneralSettingBool(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			if (DiscoveredToggle* toggle = this->_generalSettingForSlotLocked(value->selector))
+				toggle->value.setState(value->enabled);
+		}
+		break;
+
+	case v1::t1::SYSTEM_RET_CAPABILITY:
+		// F1 is shared by every system feature; only the wearing-control selector is decoded.
+		if (auto settingType = parseWearingCapability(msg))
+			this->_applyWearingCapability(*settingType);
+		break;
+
+	case v1::t1::SYSTEM_RET_STATUS:
+	case v1::t1::SYSTEM_NTFY_STATUS:
+		if (auto status = parseWearingAvailability(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			if (this->_wearingControl.support == CapabilityState::Supported)
+				this->_wearingControl.availability =
+					status->available ? Availability::Available : Availability::Unavailable;
+		}
+		break;
+
+	case v1::t1::SYSTEM_RET_PARAM:
+	case v1::t1::SYSTEM_NTFY_PARAM:
+		// Shared by wearing control (03), auto power-off (04), Speak-to-Chat (05) and button
+		// assignment (06); each decoder accepts only its own selector and layout.
+		if (auto value = parseWearingSetting(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			if (this->_wearingControl.support == CapabilityState::Supported)
+				this->_wearingControl.value.setState(value->enabled);
+		}
+		break;
+
+	default:
+		// Replies without a decoder here (EQ, spatial, Speak-to-Chat, ...) change nothing: those
+		// settings stay Acknowledged rather than Confirmed. See SettingStatus.
+		break;
+	}
+}
+
+void Headphones::_applyTable2(const CommandSerializer::Message& msg)
+{
+	using namespace CommandSerializer;
+
+	switch (static_cast<unsigned char>(msg.messageBytes[0]))
+	{
+	case v1::t2::PERIPHERAL_RET_PARAM:
+	case v1::t2::PERIPHERAL_NTFY_PARAM:
+		if (auto devices = parsePairedDevices(msg))
+		{
+			// Index 0 is the empty "no device" slot; dev1/dev2 index into the list.
+			std::vector<BluetoothDevice> savedDevices = { BluetoothDevice{"", ""} };
+			int dev1 = 0, dev2 = 0;
+			for (const auto& device : *devices)
 			{
-			case static_cast<char>(FUNCTION_TYPE::DEVICE_MANAGEMENT):   caps |= DEVICE_CAPABILITIES::MULTI_POINT;   break;
-			case static_cast<char>(FUNCTION_TYPE::VPT):                 caps |= DEVICE_CAPABILITIES::VPT;           break;
-			case static_cast<char>(FUNCTION_TYPE::OPTIMIZER):           caps |= DEVICE_CAPABILITIES::OPTIMIZER;     break;
-			case static_cast<char>(FUNCTION_TYPE::NC_ASM):              caps |= DEVICE_CAPABILITIES::NC_ASM;        break;
-			case static_cast<char>(FUNCTION_TYPE::SMART_TALKING_MODE):  caps |= DEVICE_CAPABILITIES::SPEAK_TO_CHAT; break;
+				savedDevices.push_back(BluetoothDevice{ device.name, device.mac });
+				if (device.slot == 0x01) dev1 = static_cast<int>(savedDevices.size()) - 1;
+				if (device.slot == 0x02) dev2 = static_cast<int>(savedDevices.size()) - 1;
 			}
-		}
-		std::lock_guard guard(this->_propertyMtx);
-		this->_capabilities = caps;
-		// A reply that lists no known function is still a reply: the device answered, so we
-		// know those features are absent rather than unread.
-		this->_capabilitiesKnown = true;
-		break;
-	}
-
-	case static_cast<unsigned char>(COMMAND_TYPE::DEVICES_QUERY_RESPONSE):
-	case static_cast<unsigned char>(COMMAND_TYPE::DEVICES_STATE_RESPONSE):
-	{
-		// Payload: [cmd][queryType][numDevices]{ [17-byte MAC][slot][nameLen][name] }*
-		if (bytes.size() < 3 || bytes[1] != 0x01)
-			break;
-
-		std::vector<BluetoothDevice> savedDevices = { BluetoothDevice{"", ""} };
-		int dev1 = 0, dev2 = 0;
-		size_t idx = 3;
-		int numDevices = static_cast<unsigned char>(bytes[2]);
-		bool malformed = false;
-
-		for (; numDevices > 0 && !malformed; numDevices--)
-		{
-			if (idx + MAC_ADDR_STR_SIZE + 2 > bytes.size()) { malformed = true; break; }
-
-			std::string mac(bytes.begin() + idx, bytes.begin() + idx + MAC_ADDR_STR_SIZE);
-			idx += MAC_ADDR_STR_SIZE;
-
-			unsigned char slot = static_cast<unsigned char>(bytes[idx++]);
-			unsigned char nameLength = static_cast<unsigned char>(bytes[idx++]);
-			if (idx + nameLength > bytes.size()) { malformed = true; break; }
-
-			std::string name(bytes.begin() + idx, bytes.begin() + idx + nameLength);
-			idx += nameLength;
-
-			savedDevices.push_back(BluetoothDevice{ name, mac });
-			if (slot == 0x01) dev1 = static_cast<int>(savedDevices.size()) - 1;
-			if (slot == 0x02) dev2 = static_cast<int>(savedDevices.size()) - 1;
-		}
-
-		if (!malformed)
-		{
 			std::lock_guard guard(this->_propertyMtx);
 			this->_savedDevices = std::move(savedDevices);
 			this->_dev1.setState(dev1);
 			this->_dev2.setState(dev2);
 		}
 		break;
-	}
 
 	default:
-		// Other replies (EQ, spatial, speak-to-chat, ...) have no read-back yet: those
-		// settings stay Acknowledged rather than Confirmed. See SettingStatus.
 		break;
 	}
+}
+
+void Headphones::_applySupportedFunctions(const std::vector<unsigned char>& ids)
+{
+	std::bitset<256> functions;
+	for (unsigned char id : ids)
+		functions.set(id);
+
+	std::lock_guard guard(this->_propertyMtx);
+
+	const bool firstReply = !this->_capabilitiesKnown;
+	this->_functions = functions;
+	// A reply that lists no known function is still a reply: the device answered, so we know
+	// those features are absent rather than unread.
+	this->_capabilitiesKnown = true;
+
+	unsigned int caps = 0;
+	if (this->_advertisedLocked(FUNCTION_TYPE::DEVICE_MANAGEMENT))  caps |= DEVICE_CAPABILITIES::MULTI_POINT;
+	if (this->_advertisedLocked(FUNCTION_TYPE::VPT))                caps |= DEVICE_CAPABILITIES::VPT;
+	if (this->_advertisedLocked(FUNCTION_TYPE::OPTIMIZER))          caps |= DEVICE_CAPABILITIES::OPTIMIZER;
+	if (this->_advertisedLocked(FUNCTION_TYPE::NC_ASM))             caps |= DEVICE_CAPABILITIES::NC_ASM;
+	if (this->_advertisedLocked(FUNCTION_TYPE::SMART_TALKING_MODE)) caps |= DEVICE_CAPABILITIES::SPEAK_TO_CHAT;
+	this->_capabilities = caps;
+
+	// Detailed discovery runs once per session. A repeated 07 updates the function set but does
+	// not restart discovery underneath settings that were already resolved.
+	if (!firstReply)
+		return;
+
+	// Touch panel and multipoint mode live in whichever general-setting slots the device
+	// advertises. Which slot holds which feature is only known from each slot's capability title.
+	for (unsigned char slot : { v1::GS_SLOT_1, v1::GS_SLOT_2, v1::GS_SLOT_3 })
+	{
+		if (!functions.test(slot))
+			continue;
+		this->_slotsAwaitingCapability.set(slot - v1::GS_SLOT_1);
+		this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingCapabilityQuery(slot));
+	}
+	this->_settleUndiscoveredGeneralSettingsLocked();
+
+	if (this->_advertisedLocked(FUNCTION_TYPE::CONTROL_BY_WEARING))
+		this->_enqueueQueryLocked(CommandSerializer::serializeSystemCapabilityQuery(v1::SYSTEM_CONTROL_BY_WEARING));
+	else
+		this->_wearingControl.support = CapabilityState::Unsupported;
+}
+
+void Headphones::_applyGeneralSettingCapability(const CommandSerializer::GeneralSettingCapability& cap)
+{
+	std::lock_guard guard(this->_propertyMtx);
+
+	// Only slots this session's 07 reply advertised; anything else is not ours to interpret.
+	if (!this->_capabilitiesKnown || !this->_functions.test(cap.slot))
+		return;
+	this->_slotsAwaitingCapability.reset(cap.slot - v1::GS_SLOT_1);
+
+	DiscoveredToggle* toggle = nullptr;
+	if (CommandSerializer::namesGeneralSetting(cap, v1::GS_TITLE_TOUCH_PANEL))
+		toggle = &this->_touchPanel;
+	else if (CommandSerializer::namesGeneralSetting(cap, v1::GS_TITLE_MULTIPOINT))
+		toggle = &this->_multipointMode;
+
+	if (toggle)
+	{
+		const bool isBoolean = CommandSerializer::isBooleanGeneralSetting(cap);
+		if (toggle->support == CapabilityState::Supported)
+		{
+			// Already mapped this session (a repeated reply, or the same title in a second slot):
+			// keep the first mapping rather than move the feature mid-session.
+		}
+		else if (isBoolean)
+		{
+			toggle->support = CapabilityState::Supported;
+			toggle->selector = cap.slot;
+			// Availability and value are separate questions with separate answers.
+			this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingStatusQuery(cap.slot));
+			this->_enqueueQueryLocked(CommandSerializer::serializeGeneralSettingQuery(cap.slot));
+		}
+		else
+		{
+			// A list-type setting holds an index, not a bool. Coercing it would be a guess.
+			toggle->support = CapabilityState::Unsupported;
+		}
+	}
+
+	this->_settleUndiscoveredGeneralSettingsLocked();
+}
+
+void Headphones::_settleUndiscoveredGeneralSettingsLocked()
+{
+	// Once every advertised slot has described itself, a title nobody reported is absent.
+	if (this->_slotsAwaitingCapability.any())
+		return;
+	for (DiscoveredToggle* toggle : { &this->_touchPanel, &this->_multipointMode })
+		if (toggle->support == CapabilityState::Unknown)
+			toggle->support = CapabilityState::Unsupported;
+}
+
+Headphones::DiscoveredToggle* Headphones::_generalSettingForSlotLocked(unsigned char slot)
+{
+	for (DiscoveredToggle* toggle : { &this->_touchPanel, &this->_multipointMode })
+		if (toggle->support == CapabilityState::Supported && toggle->selector == slot)
+			return toggle;
+	return nullptr;
+}
+
+void Headphones::_applyWearingCapability(unsigned char settingType)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_advertisedLocked(FUNCTION_TYPE::CONTROL_BY_WEARING))
+		return;
+	if (this->_wearingControl.support == CapabilityState::Supported)
+		return;
+
+	// Writes use the type the capability establishes; only ON_OFF has a known encoding.
+	if (settingType != v1::PROTOCOL_SETTING_TYPE_ON_OFF)
+	{
+		this->_wearingControl.support = CapabilityState::Unsupported;
+		return;
+	}
+	this->_wearingControl.support = CapabilityState::Supported;
+	this->_wearingControl.selector = v1::SYSTEM_CONTROL_BY_WEARING;
+	this->_enqueueQueryLocked(CommandSerializer::serializeSystemStatusQuery(v1::SYSTEM_CONTROL_BY_WEARING));
+	this->_enqueueQueryLocked(CommandSerializer::serializeSystemQuery(v1::SYSTEM_CONTROL_BY_WEARING));
 }
 
 int Headphones::getBatteryLevel()
@@ -708,6 +958,16 @@ void Headphones::resetState()
 	this->_batteryCharging = false;
 	this->_capabilities = 0;
 	this->_capabilitiesKnown = false;
+	this->_functions.reset();
+	this->_slotsAwaitingCapability.reset();
+
+	// Slots, availability and values are per connection: the next session rediscovers and
+	// rereads them. Nothing queued for the old link is replayed on the new one.
+	this->_touchPanel.reset();
+	this->_multipointMode.reset();
+	this->_wearingControl.reset();
+	this->_queries.clear();
+	++this->_generation;
 
 	this->_ambientSoundControl.reset(false);
 	this->_focusOnVoice.reset(false);
