@@ -23,9 +23,11 @@ Item {
             }
         }
 
-        // write-only note
+        // Shown until the headphones have reported their equalizer: before that, what is on
+        // screen is the app's last choice, not necessarily the device's.
         Rectangle {
             Layout.fillWidth: true
+            visible: Hp.settingStatus.equalizer !== "confirmed"
             radius: Theme.radius
             color: Theme.surfaceContainerLow
             border.color: Theme.outlineVariant; border.width: 1
@@ -34,7 +36,7 @@ Item {
                 id: noteRow
                 anchors.fill: parent; anchors.margins: Theme.sm; spacing: Theme.base
                 Rectangle { implicitWidth: 6; implicitHeight: 6; radius: 3; color: Theme.textSecondary; Layout.alignment: Qt.AlignVCenter }
-                Text { text: "Equalizer settings are last set in app and may differ if changed from another device."; color: Theme.textSecondary; font.pixelSize: Theme.labelMd }
+                Text { text: "Not yet read from the headphones: a change made from another device may not show here."; color: Theme.textSecondary; font.pixelSize: Theme.labelMd }
             }
         }
 
@@ -90,7 +92,8 @@ Item {
                         anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.base
                         RowLayout {
                             Layout.fillWidth: true
-                            Text { text: "Response Curve: " + root.presetNames[Hp.eqPreset]; color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
+                            // -1: the headphones report a preset this table does not list.
+                            Text { text: "Response Curve: " + (Hp.eqPreset >= 0 ? root.presetNames[Hp.eqPreset] : "Other"); color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
                             Item { Layout.fillWidth: true }
                             Row { spacing: 6
                                 Rectangle { width: 8; height: 8; radius: 4; color: Theme.success; anchors.verticalCenter: parent.verticalCenter }
@@ -109,10 +112,15 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
-                    opacity: Hp.eqManual ? 1.0 : 0.6
+                    readonly property bool editing: Hp.eqManual && Hp.eqBandsEditable
+                    opacity: editing ? 1.0 : 0.6
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.base
-                        Text { text: Hp.eqManual ? "Manual Adjustment" : "Manual Adjustment (select the Manual preset)"; color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
+                        Text {
+                            text: !Hp.eqBandsEditable ? "Manual Adjustment (these headphones report a different band layout)"
+                                : Hp.eqManual ? "Manual Adjustment" : "Manual Adjustment (select the Manual preset)"
+                            color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold
+                        }
                         RowLayout {
                             Layout.fillWidth: true
                             Layout.fillHeight: true
@@ -124,7 +132,7 @@ Item {
                                     Layout.fillHeight: true
                                     label: root.bandLabels[index]
                                     value: Hp.eqBands[index]
-                                    active: Hp.eqManual
+                                    active: Hp.eqManual && Hp.eqBandsEditable
                                     onMoved: (v) => Hp.setEqBand(index, v)
                                 }
                             }
@@ -134,7 +142,7 @@ Item {
                                 Layout.fillHeight: true
                                 label: "Clear Bass"
                                 value: Hp.eqClearBass
-                                active: Hp.eqManual
+                                active: Hp.eqManual && Hp.eqBandsEditable
                                 onMoved: (v) => Hp.eqClearBass = v
                             }
                         }

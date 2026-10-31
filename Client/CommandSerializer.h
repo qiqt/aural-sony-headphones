@@ -61,7 +61,17 @@ namespace CommandSerializer
 	Buffer serializeVoiceGuidance(bool enabled);     // voice guidance; send as DATA_MDR_NO2
 	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode);
 
-	// ---- discovery and read queries (all table 1 / DATA_MDR) --------------------------------
+	// Auto power-off carries two element IDs: the active one and the selected timer. Both are
+	// written as given; see Headphones::setAutoPowerOff for how the second one is preserved.
+	Buffer serializeAutoPowerOff(unsigned char activeElement, unsigned char selectedTimeElement);
+
+	// ---- discovery and read queries (table 1 / DATA_MDR unless noted) ------------------------
+	Buffer serializeNcAsmQuery();                                      // 66 02
+	Buffer serializeEqualizerQuery();                                  // 56 01
+	Buffer serializeVptQuery(VPT_INQUIRED_TYPE type);                  // 46 01 (VPT) / 46 02 (position)
+	Buffer serializeAudioQuery(unsigned char selector);                // E6 selector (02 = DSEE)
+	Buffer serializeSpeakToChatDetailsQuery();                         // FA 05
+	Buffer serializeVoiceGuidanceQuery();                              // 46 01 01 - table 2 (DATA_MDR_NO2)
 	Buffer serializeSupportedFunctionsQuery();                         // 06 01
 	Buffer serializeGeneralSettingCapabilityQuery(unsigned char slot); // D0 slot 01 (English)
 	Buffer serializeGeneralSettingStatusQuery(unsigned char slot);     // D2 slot
@@ -156,5 +166,55 @@ namespace CommandSerializer
 
 	// F1 03 type -> the setting type the device uses for wearing control.
 	std::optional<unsigned char> parseWearingCapability(const Message& msg);
+
+	// 57/59 01 preset count levels... The levels are raw bytes: how they map to dB (and which
+	// one is Clear Bass) is the existing client convention, not something the APK settles.
+	struct EqualizerReport
+	{
+		unsigned char preset = 0;               // EqPresetId
+		std::vector<unsigned char> levels;      // exactly `count` bytes
+	};
+	std::optional<EqualizerReport> parseEqualizer(const Message& msg);
+
+	// 47/49 type preset (table 1). type 01 = VPT preset, 02 = sound position preset.
+	struct SpatialReport
+	{
+		VPT_INQUIRED_TYPE type = VPT_INQUIRED_TYPE::NO_USE;
+		unsigned char preset = 0;
+	};
+	std::optional<SpatialReport> parseVpt(const Message& msg);
+
+	// Speak-to-Chat toggle. RET is F7 05 00 v (SmartTalkingModeSettingType.ON_OFF); NTFY is
+	// F9 05 01 v (MODE_ON_OFF) or F9 05 02 v (PREVIEW_MODE_ON_OFF). A preview is not the
+	// persistent setting and must never be applied as one.
+	struct SpeakToChatToggleReport
+	{
+		bool preview = false;
+		bool enabled = false;
+	};
+	std::optional<SpeakToChatToggleReport> parseSpeakToChatToggle(const Message& msg);
+
+	// FB/FD 05 00 sensitivity voiceFocus exitTime
+	struct SpeakToChatDetailsReport
+	{
+		unsigned char sensitivity = 0;   // 00 auto, 01 high, 02 low
+		bool voiceFocus = false;
+		unsigned char exitTime = 0;      // 00 FAST, 01 MID, 02 SLOW, 03 NONE - durations unverified
+	};
+	std::optional<SpeakToChatDetailsReport> parseSpeakToChatDetails(const Message& msg);
+
+	// E7/E9 02 00 v: the DSEE *setting* (off / auto). Not the 15/17 "processing now" indicator.
+	std::optional<bool> parseUpscaling(const Message& msg);
+
+	// Table 2: 47/49 01 01 v (voice guidance setting, ON_OFF detail).
+	std::optional<bool> parseVoiceGuidance(const Message& msg);
+
+	// F7/F9 04 01 active selectedTime
+	struct AutoPowerOffReport
+	{
+		unsigned char activeElement = 0;
+		unsigned char selectedTimeElement = 0;
+	};
+	std::optional<AutoPowerOffReport> parseAutoPowerOff(const Message& msg);
 }
 

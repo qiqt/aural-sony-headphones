@@ -68,8 +68,14 @@ Item {
                 id: timeCol
                 anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.sm
                 Text { text: "Time Until Audio Resumes"; color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
-                SegmentedControl { Layout.fillWidth: true; options: ["Short","Standard","Long","Off"]; currentIndex: Hp.s2cAutoOff; onActivated: (i) => Hp.s2cAutoOff = i }
-                Text { text: "Standard resumes audio about 15 seconds after you stop speaking."; color: Theme.textSecondary; font.pixelSize: Theme.labelMd }
+                // Sony's FAST / MID / SLOW / NONE. The exact durations have not been verified,
+                // so the labels stay relative and NONE says what it does.
+                SegmentedControl { Layout.fillWidth: true; options: ["Short","Standard","Long","Never"]; currentIndex: Hp.s2cAutoOff; onActivated: (i) => Hp.s2cAutoOff = i }
+                Text {
+                    Layout.fillWidth: true
+                    text: "How long the headphones wait after you stop talking before resuming audio. Never keeps Speak-to-Chat on until you end it."
+                    color: Theme.textSecondary; font.pixelSize: Theme.labelMd; wrapMode: Text.WordWrap
+                }
             }
         }
 

@@ -77,6 +77,8 @@ struct Property {
 };
 
 // v1 equalizer state: a preset plus the manual band levels (clear bass + 5 bands), each -10..+10.
+// Inside Headphones, preset is the EqPresetId byte (0-255): setEqualizer() converts the signed
+// EQ_PRESET value callers pass, and a reported 0xFF is recorded as MANUAL (see _applyEqualizer).
 struct EqualizerConfig {
 	int preset = 0;                              // EQ_PRESET code
 	int clearBass = 0;                           // -10..+10
@@ -86,6 +88,77 @@ struct EqualizerConfig {
 		return preset == other.preset && clearBass == other.clearBass && bands == other.bands;
 	}
 };
+
+// Auto power-off is two element IDs, not one mode: the active element (disabled, when removed,
+// or a timer) and the selected timer, which the device keeps while another element is active.
+// The defaults are the bytes the client always sent for "don't power off".
+struct AutoPowerOffConfig {
+	unsigned char active = v1::APO_ELEMENT_DISABLED;
+	unsigned char selectedTime = v1::APO_ELEMENT_5_MIN;
+
+	bool operator==(const AutoPowerOffConfig& other) const {
+		return active == other.active && selectedTime == other.selectedTime;
+	}
+};
+
+inline unsigned char autoPowerOffElement(AUTO_POWER_OFF mode)
+{
+	switch (mode)
+	{
+	case AUTO_POWER_OFF::AFTER_5_MIN:    return v1::APO_ELEMENT_5_MIN;
+	case AUTO_POWER_OFF::AFTER_30_MIN:   return v1::APO_ELEMENT_30_MIN;
+	case AUTO_POWER_OFF::AFTER_1_HOUR:   return v1::APO_ELEMENT_60_MIN;
+	case AUTO_POWER_OFF::AFTER_3_HOUR:   return v1::APO_ELEMENT_180_MIN;
+	case AUTO_POWER_OFF::WHEN_TAKEN_OFF: return v1::APO_ELEMENT_WHEN_REMOVED;
+	case AUTO_POWER_OFF::OFF:            break;
+	}
+	return v1::APO_ELEMENT_DISABLED;
+}
+
+inline AUTO_POWER_OFF autoPowerOffMode(unsigned char element)
+{
+	switch (element)
+	{
+	case v1::APO_ELEMENT_5_MIN:        return AUTO_POWER_OFF::AFTER_5_MIN;
+	case v1::APO_ELEMENT_30_MIN:       return AUTO_POWER_OFF::AFTER_30_MIN;
+	case v1::APO_ELEMENT_60_MIN:       return AUTO_POWER_OFF::AFTER_1_HOUR;
+	case v1::APO_ELEMENT_180_MIN:      return AUTO_POWER_OFF::AFTER_3_HOUR;
+	case v1::APO_ELEMENT_WHEN_REMOVED: return AUTO_POWER_OFF::WHEN_TAKEN_OFF;
+	default:                           break;
+	}
+	return AUTO_POWER_OFF::OFF;
+}
+
+// The three modes the UI offers, derived from a complete NC/ASM report.
+enum class AmbientMode
+{
+	NoiseCancelling,
+	AmbientSound,
+	Off
+};
+
+// Reads the NC setting type and value, not only the effect and the ambient level: a device can
+// report noise cancelling while still carrying the last ambient level. For the level-adjustment
+// type - what this client writes - level 0 also means noise cancelling, the rule the hardware-
+// verified NC/Ambient round trip relied on.
+inline AmbientMode ambientModeOf(const CommandSerializer::NcAsmReport& r)
+{
+	if (r.effect == static_cast<unsigned char>(NC_ASM_EFFECT::OFF))
+		return AmbientMode::Off;
+	switch (static_cast<NC_ASM_SETTING_TYPE>(r.ncSettingType))
+	{
+	case NC_ASM_SETTING_TYPE::ON_OFF:
+		return r.ncValue == 0x01 ? AmbientMode::NoiseCancelling : AmbientMode::AmbientSound;
+	case NC_ASM_SETTING_TYPE::DUAL_SINGLE_OFF:
+		return r.ncValue != static_cast<unsigned char>(NC_DUAL_SINGLE_VALUE::OFF)
+			? AmbientMode::NoiseCancelling : AmbientMode::AmbientSound;
+	case NC_ASM_SETTING_TYPE::LEVEL_ADJUSTMENT:
+		// The client writes SINGLE for ambient level 1, so SINGLE alone is not noise cancelling.
+		return (r.ncValue == static_cast<unsigned char>(NC_DUAL_SINGLE_VALUE::DUAL) || r.asmLevel == 0)
+			? AmbientMode::NoiseCancelling : AmbientMode::AmbientSound;
+	}
+	return AmbientMode::AmbientSound;
+}
 
 // A read-only copy of every setting's status, taken under one lock so the UI never sees a
 // half-updated picture.
@@ -173,9 +246,15 @@ public:
 	std::pair<int, int> getConnectedDevices();
 	void setMultiPointConnection(int connectionId, int newDevice, int oldDevice);
 
+	// The last complete NC/ASM report, every field kept. Empty until the device sends one.
+	std::optional<CommandSerializer::NcAsmReport> getNcAsmReport();
+
 	// Equalizer
 	void setEqualizer(const EqualizerConfig& cfg);
 	EqualizerConfig getEqualizer();
+	// How many level bytes the device's last EQ report carried; -1 until it sends one. The
+	// band editor only fits a device that reports clear bass + 5 bands (6).
+	int getEqualizerLevelCount();
 
 	// DSEE / DSEE Extreme upscaling
 	void setAudioUpsampling(bool val);
@@ -185,9 +264,13 @@ public:
 	void setVoiceGuidance(bool val);
 	bool getVoiceGuidance();
 
-	// Auto power-off
+	// Auto power-off. Selecting a non-timer mode keeps the device's selected timer in the
+	// second element instead of overwriting it with a fixed value.
 	void setAutoPowerOff(AUTO_POWER_OFF val);
 	AUTO_POWER_OFF getAutoPowerOff();
+	AutoPowerOffConfig getAutoPowerOffConfig();
+	// The active element the device itself last reported, if it has.
+	std::optional<unsigned char> getReportedAutoPowerOffElement();
 
 	// Capabilities reported by the device.
 	unsigned int getCapabilities();
@@ -199,6 +282,8 @@ public:
 	CapabilityState featureState(DEVICE_CAPABILITIES cap);
 	// The same question for any advertised function ID.
 	CapabilityState functionState(FUNCTION_TYPE fn);
+	// Every function ID the device advertised this session, ascending (empty until it answers).
+	std::vector<unsigned char> supportedFunctions();
 	// Convenience for UI gating: show a control unless the device said it is unsupported.
 	// Unknown counts as "show it": which V1 devices answer the capability query has not been
 	// established on hardware. Use featureState() when the distinction matters.
@@ -258,6 +343,20 @@ private:
 		unsigned long long generation = 0;
 	};
 
+	// Settings whose value can be read back. A read is only ever queued for a function the
+	// device advertised this session.
+	enum class ReadBack
+	{
+		Equalizer,
+		Vpt,
+		SoundPosition,
+		SpeakToChat,
+		SpeakToChatDetails,
+		Dsee,
+		VoiceGuidance,
+		AutoPowerOff
+	};
+
 	void queryNcAsmState();
 	void queryDeviceCapabilities();
 	void queryDevices();
@@ -271,16 +370,22 @@ private:
 	void _applyGeneralSettingCapability(const CommandSerializer::GeneralSettingCapability& cap);
 	void _applyWearingCapability(unsigned char settingType);
 
+	void _applyNcAsm(const CommandSerializer::NcAsmReport& report);
+	void _applyEqualizer(const CommandSerializer::EqualizerReport& report);
+
 	// Called with _propertyMtx held.
 	void _enqueueQueryLocked(Buffer payload, DATA_TYPE dataType = DATA_TYPE::DATA_MDR);
 	bool _advertisedLocked(FUNCTION_TYPE fn) const;
 	DiscoveredToggle* _generalSettingForSlotLocked(unsigned char slot);
 	void _settleUndiscoveredGeneralSettingsLocked();
+	void _queueReadBackLocked(ReadBack which);
+	// After a write: ask the device what it now holds. An ACK only says the frame arrived.
+	void _queueReadBack(ReadBack which);
 
 	// Snapshot prop under the lock, send without it, then record the outcome against the
-	// revision that was actually sent.
+	// revision that was actually sent. Returns true when a frame went out and was ACKed.
 	template <class T, class SendFn>
-	void _sendPending(Property<T>& prop, SendFn&& send);
+	bool _sendPending(Property<T>& prop, SendFn&& send);
 
 	// Groups that share one frame, so all their properties are snapshotted together.
 	void _pushNcAsm();
@@ -320,11 +425,15 @@ private:
 	Property<int> _dev1, _dev2;
 
 	Property<EqualizerConfig> _eq;
+	int _eqLevelCount = -1;
 
-	// Write-only system settings: no read-back exists, so they stay Acknowledged at best.
+	// Last complete NC/ASM report; the three ambient properties hold its normalised form.
+	std::optional<CommandSerializer::NcAsmReport> _ncAsmReport;
+
+	// Read back when the device advertises them; Acknowledged at best when it does not.
 	Property<bool> _audioUpsampling;
 	Property<bool> _voiceGuidance;
-	Property<AUTO_POWER_OFF> _autoPowerOff{ AUTO_POWER_OFF::OFF, AUTO_POWER_OFF::OFF };
+	Property<AutoPowerOffConfig> _autoPowerOff;
 
 	std::mutex _propertyMtx;
 
@@ -431,14 +540,14 @@ inline void Property<T>::reset(const T& val)
 }
 
 template<class T, class SendFn>
-inline void Headphones::_sendPending(Property<T>& prop, SendFn&& send)
+inline bool Headphones::_sendPending(Property<T>& prop, SendFn&& send)
 {
 	T value;
 	unsigned long long rev;
 	{
 		std::lock_guard guard(this->_propertyMtx);
 		if (prop.isFulfilled())
-			return;
+			return false;
 		value = prop.desired;
 		rev = prop.revision;
 	}
@@ -456,4 +565,5 @@ inline void Headphones::_sendPending(Property<T>& prop, SendFn&& send)
 
 	std::lock_guard guard(this->_propertyMtx);
 	prop.markSent(rev, value);
+	return true;
 }

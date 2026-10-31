@@ -27,8 +27,9 @@ Item {
             Layout.fillWidth: true
             spacing: Theme.lg
 
-            // --- Sound Position ---
+            // --- Sound Position --- (function 42; a device can have one effect without the other)
             Rectangle {
+                visible: Hp.soundPositionAvailable
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
@@ -57,8 +58,9 @@ Item {
                 }
             }
 
-            // --- Surround (VPT) ---
+            // --- Surround (VPT) --- (function 41)
             Rectangle {
+                visible: Hp.vptAvailable
                 Layout.fillWidth: true
                 Layout.preferredHeight: 200
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1

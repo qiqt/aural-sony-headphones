@@ -70,6 +70,35 @@ const EQ_PRESET EQ_PRESETS[] = {
 };
 constexpr int EQ_MANUAL_INDEX = 9;
 
+// EqPresetId byte as the engine holds it -> UI index, or -1 for a preset the table lacks.
+int eqPresetIndex(int code)
+{
+    for (int i = 0; i < static_cast<int>(std::size(EQ_PRESETS)); ++i)
+        if (static_cast<unsigned char>(EQ_PRESETS[i]) == code)
+            return i;
+    return -1;
+}
+
+// The auto power-off choices a model is known to offer. The XM4 has a "when taken off" switch
+// rather than timers (Gadgetbridge models it that way, and the earlier XM4 notes agree); other
+// recognised V1 models keep the full list until their capability replies are captured.
+QVariantList knownAutoPowerOffChoices(SonyModel model)
+{
+    if (model == SonyModel::WH_1000XM4)
+        return { static_cast<int>(AUTO_POWER_OFF::OFF), static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF) };
+    return { static_cast<int>(AUTO_POWER_OFF::OFF), static_cast<int>(AUTO_POWER_OFF::AFTER_5_MIN),
+             static_cast<int>(AUTO_POWER_OFF::AFTER_30_MIN), static_cast<int>(AUTO_POWER_OFF::AFTER_1_HOUR),
+             static_cast<int>(AUTO_POWER_OFF::AFTER_3_HOUR), static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF) };
+}
+
+int soundPositionIndex(SOUND_POSITION_PRESET position)
+{
+    for (int i = 0; i < 6; ++i)
+        if (SOUND_POSITION_PRESET_ARRAY[i] == position)
+            return i;
+    return 0;
+}
+
 QVariantMap mpEntry(const QString& name, const QString& status, int slot)
 {
     QVariantMap m;
@@ -122,23 +151,23 @@ void HeadphonesController::init()
         _s2cSensitivity = 0;
         _s2cAutoOff = 1;
         _dsee = true;
-        _autoPowerOff = 2;
+        _autoPowerOff = static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF); // one of the XM4's choices
         _soundPosition = 3; // Front
         _mpDevices = QVariantList{
             mpEntry("MacBook Pro", "Active audio source", 1),
             mpEntry("iPhone 15", "Standby", 2)
         };
 
-        // Demo mode is a UI preview, so it also previews the honest status vocabulary:
-        // ambient has a read-back, the write-only settings do not.
+        // Demo mode is a UI preview, so it also previews the honest status vocabulary: most
+        // settings read back as Confirmed, one is still only Sent, one was never read.
         SettingsStatus demoStatus;
         demoStatus.ambient = SettingStatus::Confirmed;
-        demoStatus.equalizer = SettingStatus::Acknowledged;
+        demoStatus.equalizer = SettingStatus::Confirmed;
         demoStatus.spatial = SettingStatus::Acknowledged;
-        demoStatus.speakToChat = SettingStatus::Acknowledged;
-        demoStatus.dsee = SettingStatus::Acknowledged;
+        demoStatus.speakToChat = SettingStatus::Confirmed;
+        demoStatus.dsee = SettingStatus::Confirmed;
         demoStatus.voiceGuidance = SettingStatus::Unknown;
-        demoStatus.autoPowerOff = SettingStatus::Acknowledged;
+        demoStatus.autoPowerOff = SettingStatus::Confirmed;
         demoStatus.optimizer = SettingStatus::Confirmed;
         demoStatus.multipoint = SettingStatus::Confirmed;
         _settingStatus = statusMap(demoStatus);
@@ -192,6 +221,20 @@ bool HeadphonesController::featureAvailable(DEVICE_CAPABILITIES cap)
     return _identity.recognised;
 }
 
+// The same rule for any function ID the capability reply can list.
+bool HeadphonesController::functionAvailable(FUNCTION_TYPE fn)
+{
+    if (!connected() || _protocol != SonyProtocol::V1) return false;
+
+    switch (_headphones.functionState(fn))
+    {
+    case CapabilityState::Supported:   return true;
+    case CapabilityState::Unsupported: return false;
+    case CapabilityState::Unknown:     break;
+    }
+    return _identity.recognised;
+}
+
 bool HeadphonesController::supportsOptimizer() { return featureAvailable(DEVICE_CAPABILITIES::OPTIMIZER); }
 bool HeadphonesController::supportsSpeakToChat() { return featureAvailable(DEVICE_CAPABILITIES::SPEAK_TO_CHAT); }
 bool HeadphonesController::supportsMultipoint() { return featureAvailable(DEVICE_CAPABILITIES::MULTI_POINT); }
@@ -207,28 +250,45 @@ bool HeadphonesController::ambientAvailable()
     return _headphones.featureState(DEVICE_CAPABILITIES::NC_ASM) != CapabilityState::Unsupported;
 }
 
-// No capability bit covers the equalizer, and the preset table is model-specific (Custom 1/2
-// do not exist on every model), so recognition is the only evidence there is.
+// The device can say it has a preset equalizer (51), but the preset table the UI offers is
+// model-specific (Custom 1/2 do not exist everywhere) and the EQ capability layout has not been
+// recovered. So: never where the device says there is none, and otherwise only for a model we
+// recognise.
 bool HeadphonesController::equalizerAvailable()
 {
-    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised;
+    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised
+        && _headphones.functionState(FUNCTION_TYPE::PRESET_EQ) != CapabilityState::Unsupported;
 }
 
-bool HeadphonesController::spatialAvailable() { return featureAvailable(DEVICE_CAPABILITIES::VPT); }
+bool HeadphonesController::vptAvailable() { return functionAvailable(FUNCTION_TYPE::VPT); }
+bool HeadphonesController::soundPositionAvailable() { return functionAvailable(FUNCTION_TYPE::SOUND_POSITION); }
+bool HeadphonesController::spatialAvailable() { return vptAvailable() || soundPositionAvailable(); }
 
-// DSEE, voice guidance and auto power off share a shape: write-only, no capability bit, no
-// read-back, and encodings that are model-specific (the auto-power-off timeout table most
-// obviously). Sending the XM4 table to something else is exactly the guess this gate prevents,
-// and with no read-back the app would never find out it had guessed wrong.
+// Plain on/off settings with a read-back: the device's own advertisement is enough evidence.
+bool HeadphonesController::dseeAvailable() { return functionAvailable(FUNCTION_TYPE::UPSCALING); }
+bool HeadphonesController::voiceGuidanceAvailable() { return functionAvailable(FUNCTION_TYPE::VOICE_GUIDANCE); }
+
+// Auto power-off's choices are model knowledge until its capability layout is recovered, so an
+// unrecognised device does not get it even when it advertises the function.
+bool HeadphonesController::autoPowerOffAvailable()
+{
+    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised
+        && _headphones.functionState(FUNCTION_TYPE::AUTO_POWER_OFF) != CapabilityState::Unsupported;
+}
+
 bool HeadphonesController::systemSettingsAvailable()
 {
-    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised;
+    return dseeAvailable() || voiceGuidanceAvailable() || autoPowerOffAvailable();
 }
 
 QString HeadphonesController::limitedControlReason()
 {
     if (!connected() || _protocol != SonyProtocol::V1 || _identity.recognised)
         return QString();
+    if (_headphones.capabilitiesKnown())
+        return tr("Aural doesn't recognise this device, so it offers only what the headphones "
+                  "report supporting. Model-specific settings such as the equalizer presets "
+                  "and auto power-off timers stay hidden.");
     return tr("Aural doesn't recognise this device, so it only offers the control it can "
               "verify. Ambient sound reports its state back; everything else is "
               "model-specific and would be a guess.");
@@ -315,8 +375,19 @@ QVariantList HeadphonesController::eqBands() const
 // including Custom 1/2), so only expose band editing there.
 bool HeadphonesController::eqManual() const { return _eqPreset == EQ_MANUAL_INDEX; }
 
+// The editor is clear bass + five bands. Until the device reports its layout that is the
+// assumption the client always made; once it reports another shape the editor would not fit.
+bool HeadphonesController::eqBandsEditable()
+{
+    const int levels = _headphones.getEqualizerLevelCount();
+    return levels < 0 || levels == 6;
+}
+
 void HeadphonesController::pushEqualizer()
 {
+    // A preset the UI table does not contain (reported by the device) has nothing to push.
+    if (_eqPreset < 0 || _eqPreset >= static_cast<int>(std::size(EQ_PRESETS)))
+        return;
     EqualizerConfig cfg;
     cfg.preset = static_cast<int>(EQ_PRESETS[_eqPreset]);
     cfg.clearBass = _eqClearBass;
@@ -335,7 +406,7 @@ void HeadphonesController::setEqPreset(int v)
 
 void HeadphonesController::setEqClearBass(int v)
 {
-    if (!equalizerAvailable()) return;
+    if (!equalizerAvailable() || !eqManual() || !eqBandsEditable()) return;
     if (_eqClearBass == v) return;
     _eqClearBass = v;
     pushEqualizer();
@@ -344,7 +415,7 @@ void HeadphonesController::setEqClearBass(int v)
 
 void HeadphonesController::setEqBand(int index, int value)
 {
-    if (!equalizerAvailable()) return;
+    if (!equalizerAvailable() || !eqManual() || !eqBandsEditable()) return;
     if (index < 0 || index >= 5 || _eqBands[index] == value) return;
     _eqBands[index] = value;
     pushEqualizer();
@@ -354,7 +425,7 @@ void HeadphonesController::setEqBand(int index, int value)
 // ---- Spatial (mutually exclusive) ----
 void HeadphonesController::setSoundPosition(int v)
 {
-    if (!spatialAvailable()) return;
+    if (!soundPositionAvailable()) return;
     if (v < 0 || v > 5) return;
     _soundPosition = v;
     if (v != 0) _vptType = 0;
@@ -365,7 +436,7 @@ void HeadphonesController::setSoundPosition(int v)
 
 void HeadphonesController::setVptType(int v)
 {
-    if (!spatialAvailable()) return;
+    if (!vptAvailable()) return;
     if (v < 0 || v > 4) return;
     _vptType = v;
     if (v != 0) _soundPosition = 0;
@@ -415,7 +486,7 @@ void HeadphonesController::setS2cVoice(bool v)
 // ---- System ----
 void HeadphonesController::setDsee(bool v)
 {
-    if (!systemSettingsAvailable()) return;
+    if (!dseeAvailable()) return;
     if (_dsee == v) return;
     _dsee = v;
     _headphones.setAudioUpsampling(v);
@@ -424,17 +495,30 @@ void HeadphonesController::setDsee(bool v)
 
 void HeadphonesController::setVoiceGuidance(bool v)
 {
-    if (!systemSettingsAvailable()) return;
+    if (!voiceGuidanceAvailable()) return;
     if (_voiceGuidance == v) return;
     _voiceGuidance = v;
     _headphones.setVoiceGuidance(v);
     emit systemChanged();
 }
 
+QVariantList HeadphonesController::autoPowerOffOptions()
+{
+    QVariantList options = knownAutoPowerOffChoices(_identity.model);
+    // Whatever the device reports holding is, by definition, a choice it supports.
+    if (auto reported = _headphones.getReportedAutoPowerOffElement())
+    {
+        const int mode = static_cast<int>(autoPowerOffMode(*reported));
+        if (!options.contains(mode))
+            options.push_back(mode);
+    }
+    return options;
+}
+
 void HeadphonesController::setAutoPowerOff(int v)
 {
-    if (!systemSettingsAvailable()) return;
-    if (v < 0 || v > 5 || _autoPowerOff == v) return;
+    if (!autoPowerOffAvailable()) return;
+    if (_autoPowerOff == v || !autoPowerOffOptions().contains(v)) return;
     _autoPowerOff = v;
     _headphones.setAutoPowerOff(static_cast<AUTO_POWER_OFF>(v));
     emit systemChanged();
@@ -736,12 +820,15 @@ void HeadphonesController::emitLiveDeltas()
         emit ambientChanged();
     }
 
+    // The whole advertised set, not only the legacy bits: every per-setting gate reads from it.
     unsigned int caps = _headphones.getCapabilities();
     bool capsKnown = _headphones.capabilitiesKnown();
-    if (caps != _cCaps || capsKnown != _cCapsKnown)
+    std::vector<unsigned char> functions = _headphones.supportedFunctions();
+    if (caps != _cCaps || capsKnown != _cCapsKnown || functions != _cFunctions)
     {
         _cCaps = caps;
         _cCapsKnown = capsKnown;
+        _cFunctions = std::move(functions);
         emit capabilitiesChanged();
     }
 
@@ -755,6 +842,8 @@ void HeadphonesController::emitLiveDeltas()
 
     bool fav = _headphones.isFocusOnVoiceAvailable();
     if (fav != _cFocusAvail) { _cFocusAvail = fav; emit ambientChanged(); }
+
+    syncReadBack(_headphones.getStatuses());
 
     // Multipoint list (device-driven)
     if (supportsMultipoint())
@@ -770,6 +859,93 @@ void HeadphonesController::emitLiveDeltas()
         add(conn.first, 1);
         add(conn.second, 2);
         if (list != _mpDevices) { _mpDevices = list; emit multipointChanged(); }
+    }
+}
+
+// Same rule as the ambient block above: compare against the last engine value we copied, not
+// the UI value, so a change the user made is only overwritten by something the device says
+// afterwards. An engine value moves on an ACK (to what we sent - already on screen) and on a
+// device report (which is what we want shown, including a value the device chose over ours).
+void HeadphonesController::syncReadBack(const SettingsStatus& statuses)
+{
+    if (statuses.equalizer != SettingStatus::Requested)
+    {
+        const EqualizerConfig eq = _headphones.getEqualizer();
+        const int levels = _headphones.getEqualizerLevelCount();
+        if (!(eq == _cEq) || levels != _cEqLevelCount)
+        {
+            _cEq = eq;
+            _cEqLevelCount = levels;
+            _eqPreset = eqPresetIndex(eq.preset);
+            _eqClearBass = eq.clearBass;
+            for (int i = 0; i < 5 && i < static_cast<int>(eq.bands.size()); ++i)
+                _eqBands[i] = eq.bands[i];
+            emit eqChanged();
+        }
+    }
+
+    if (statuses.spatial != SettingStatus::Requested)
+    {
+        const int vpt = _headphones.getVptType();
+        const SOUND_POSITION_PRESET position = _headphones.getSurroundPosition();
+        if (vpt != _cVpt || position != _cPosition)
+        {
+            _cVpt = vpt;
+            _cPosition = position;
+            // The UI has the four venues; the reserved presets have no control to show them on.
+            _vptType = (vpt >= 0 && vpt <= 4) ? vpt : 0;
+            _soundPosition = soundPositionIndex(position);
+            emit spatialChanged();
+        }
+    }
+
+    if (statuses.speakToChat != SettingStatus::Requested)
+    {
+        const S2C_TOGGLE toggle = _headphones.getS2CToggle();
+        const unsigned int options = _headphones.getS2COptions();
+        if (toggle != _cS2c || options != _cS2cOptions)
+        {
+            _cS2c = toggle;
+            _cS2cOptions = options;
+            _s2cEnabled = toggle == S2C_TOGGLE::ACTIVE;
+            _s2cSensitivity = static_cast<int>((options >> 16) & 0xff);
+            _s2cVoice = ((options >> 8) & 0xff) != 0;
+            _s2cAutoOff = static_cast<int>(options & 0xff);
+            emit s2cChanged();
+        }
+    }
+
+    bool systemDelta = false;
+    if (statuses.dsee != SettingStatus::Requested)
+    {
+        const bool dsee = _headphones.getAudioUpsampling();
+        if (dsee != _cDsee) { _cDsee = dsee; _dsee = dsee; systemDelta = true; }
+    }
+    if (statuses.voiceGuidance != SettingStatus::Requested)
+    {
+        const bool guidance = _headphones.getVoiceGuidance();
+        if (guidance != _cVoiceGuidance) { _cVoiceGuidance = guidance; _voiceGuidance = guidance; systemDelta = true; }
+    }
+    if (statuses.autoPowerOff != SettingStatus::Requested)
+    {
+        const AutoPowerOffConfig powerOff = _headphones.getAutoPowerOffConfig();
+        if (!(powerOff == _cAutoPowerOff))
+        {
+            _cAutoPowerOff = powerOff;
+            _autoPowerOff = static_cast<int>(autoPowerOffMode(powerOff.active));
+            systemDelta = true;
+        }
+    }
+    if (systemDelta)
+        emit systemChanged();
+
+    // A reported element can widen the offered choices.
+    const auto reported = _headphones.getReportedAutoPowerOffElement();
+    const int reportedElement = reported ? static_cast<int>(*reported) : -1;
+    if (reportedElement != _cReportedPowerOff)
+    {
+        _cReportedPowerOff = reportedElement;
+        emit capabilitiesChanged();
     }
 }
 
@@ -856,11 +1032,22 @@ void HeadphonesController::resetUiState()
     _cCharging = false;
     _cCaps = 0;
     _cCapsKnown = false;
+    _cFunctions.clear();
     _cOptimizing = false;
     _cFocusAvail = false;
     _cAmbientOn = false;
     _cAsmLevel = 0;
     _cFocusVoice = false;
+    _cEq = EqualizerConfig{};
+    _cEqLevelCount = -1;
+    _cVpt = 0;
+    _cPosition = SOUND_POSITION_PRESET::OFF;
+    _cS2c = S2C_TOGGLE::INACTIVE;
+    _cS2cOptions = 0;
+    _cDsee = false;
+    _cVoiceGuidance = false;
+    _cAutoPowerOff = AutoPowerOffConfig{};
+    _cReportedPowerOff = -1;
 
     _ambientMode = 2;
     _asmLevel = 10;

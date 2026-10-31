@@ -249,7 +249,7 @@ void TrayController::refresh()
     // window does (SON-11). A control the window is withholding must not be reachable here.
     const bool ambient = _controller->ambientAvailable();
     const bool s2c = _controller->supportsSpeakToChat();
-    const bool system = _controller->systemSettingsAvailable();
+    const bool dsee = _controller->dseeAvailable();
 
     const QVariantMap status = _controller->settingStatus();
     const QString ambientSuffix = connected ? statusSuffix(status.value("ambient").toString()) : QString();
@@ -266,8 +266,8 @@ void TrayController::refresh()
     _s2cAction->setText(tr("Speak-to-Chat") +
         (connected ? statusSuffix(status.value("speakToChat").toString()) : QString()));
 
-    _dseeAction->setVisible(system);
-    _dseeAction->setEnabled(system);
+    _dseeAction->setVisible(dsee);
+    _dseeAction->setEnabled(dsee);
     _dseeAction->setChecked(_controller->dsee());
     _dseeAction->setText(tr("DSEE Extreme") +
         (connected ? statusSuffix(status.value("dsee").toString()) : QString()));

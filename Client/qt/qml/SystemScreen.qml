@@ -5,7 +5,10 @@ import Aural
 
 Item {
     id: root
-    readonly property var powerOptions: ["Don't power off","After 5 min","After 30 min","After 1 hour","After 3 hours","When taken off"]
+    // Indexed by AUTO_POWER_OFF value. Only the values in Hp.autoPowerOffOptions are offered.
+    readonly property var powerNames: ["Don't power off","After 5 min","After 30 min","After 1 hour","After 3 hours","When taken off"]
+    readonly property var powerOptions: Hp.autoPowerOffOptions
+    readonly property var powerLabels: powerOptions.map(v => powerNames[v])
 
     // This page is the tallest one and grows with each preference, so it scrolls rather
     // than clipping the bottom card at the minimum window height.
@@ -26,14 +29,13 @@ Item {
             Text { text: "Device behaviour and application preferences."; color: Theme.textSecondary; font.pixelSize: Theme.bodyLg }
         }
 
-        // Device features (need a connected v1 device)
+        // Device features (need a connected v1 device). Each row follows its own gate: the
+        // device's advertised functions once it has answered, otherwise the recognised model.
         Rectangle {
             Layout.fillWidth: true
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: featCol.implicitHeight + 2 * Theme.lg
-            // Write-only settings with no read-back, so the app can never tell whether they
-            // landed. Offered only where the controller says they are safe (SON-11).
-            enabled: Hp.systemSettingsAvailable
+            enabled: Hp.dseeAvailable || Hp.voiceGuidanceAvailable
             opacity: enabled ? 1.0 : 0.5
             ColumnLayout {
                 id: featCol
@@ -41,28 +43,34 @@ Item {
                 Text { text: "Device Features"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold; font.family: Theme.displayFont }
                 Text {
                     Layout.fillWidth: true
-                    visible: Hp.connected && !Hp.isV2 && !Hp.systemSettingsAvailable
-                    text: "Not offered for an unrecognised device: these settings are model-specific and report nothing back, so Aural could not tell you whether they worked."
+                    visible: Hp.connected && !Hp.isV2 && !Hp.dseeAvailable && !Hp.voiceGuidanceAvailable
+                    text: Hp.capabilitiesKnown
+                          ? "These headphones did not report DSEE or voice guidance."
+                          : "Not offered for an unrecognised device until it reports supporting them."
                     color: Theme.textSecondary
                     font.pixelSize: Theme.labelSm
                     wrapMode: Text.WordWrap
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    visible: Hp.dseeAvailable || !Hp.connected
                     ColumnLayout { spacing: 0
                         Text { text: "DSEE Extreme"; color: Theme.textPrimary; font.pixelSize: Theme.bodyMd; font.weight: Font.DemiBold }
-                        Text { text: "Upscale compressed audio in real time."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                        // The setting, not whether upscaling is running right now: that is a
+                        // separate indicator the headphones report on their own.
+                        Text { text: "Allow the headphones to upscale compressed audio."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
                     }
                     Item { Layout.fillWidth: true }
                     StatusChip {
                         Layout.alignment: Qt.AlignVCenter
-                        active: Hp.systemSettingsAvailable
+                        active: Hp.dseeAvailable
                         status: Hp.settingStatus.dsee
                     }
-                    PillSwitch { checked: Hp.dsee; onToggled: (on) => Hp.dsee = on }
+                    PillSwitch { checked: Hp.dsee; enabled: Hp.dseeAvailable; onToggled: (on) => Hp.dsee = on }
                 }
                 RowLayout {
                     Layout.fillWidth: true
+                    visible: Hp.voiceGuidanceAvailable || !Hp.connected
                     ColumnLayout { spacing: 0
                         Text { text: "Voice Guidance"; color: Theme.textPrimary; font.pixelSize: Theme.bodyMd; font.weight: Font.DemiBold }
                         Text { text: "Hear spoken status alerts from the headphones."; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
@@ -70,10 +78,10 @@ Item {
                     Item { Layout.fillWidth: true }
                     StatusChip {
                         Layout.alignment: Qt.AlignVCenter
-                        active: Hp.systemSettingsAvailable
+                        active: Hp.voiceGuidanceAvailable
                         status: Hp.settingStatus.voiceGuidance
                     }
-                    PillSwitch { checked: Hp.voiceGuidance; onToggled: (on) => Hp.voiceGuidance = on }
+                    PillSwitch { checked: Hp.voiceGuidance; enabled: Hp.voiceGuidanceAvailable; onToggled: (on) => Hp.voiceGuidance = on }
                 }
             }
         }
@@ -83,8 +91,8 @@ Item {
             Layout.fillWidth: true
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: powCol.implicitHeight + 2 * Theme.lg
-            // The auto power-off timeout table is model-specific.
-            enabled: Hp.systemSettingsAvailable
+            // The choices are the model's known ones plus whatever the device reports holding.
+            enabled: Hp.autoPowerOffAvailable
             opacity: enabled ? 1.0 : 0.5
             ColumnLayout {
                 id: powCol
@@ -95,15 +103,15 @@ Item {
                     Text { text: "Auto power-off"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
                     Item { Layout.fillWidth: true }
                     StatusChip {
-                        active: Hp.systemSettingsAvailable
+                        active: Hp.autoPowerOffAvailable
                         status: Hp.settingStatus.autoPowerOff
                     }
                 }
                 AuralCombo {
                     Layout.fillWidth: true
-                    model: root.powerOptions
-                    onActivated: (i) => Hp.autoPowerOff = i
-                    Binding on currentIndex { value: Hp.autoPowerOff }
+                    model: root.powerLabels
+                    onActivated: (i) => Hp.autoPowerOff = root.powerOptions[i]
+                    Binding on currentIndex { value: Math.max(0, root.powerOptions.indexOf(Hp.autoPowerOff)) }
                 }
             }
         }

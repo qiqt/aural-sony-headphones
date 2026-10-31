@@ -42,6 +42,28 @@ the recovered evidence; it does not prove a headset accepts the bytes.
 Not decoded on purpose: the upscaling effect indicator (`15`/`17`) is routed away from the DSEE
 setting and ignored — "DSEE enabled" and "DSEE processing right now" are different facts.
 
+## Read-back for existing settings
+
+Each read is queued when the `07` reply advertises the matching function, and again after a write
+to that setting is ACKed. A different reported value replaces the request on screen; the status
+says Confirmed only once the device has reported. Without a valid `07` nothing is read and writes
+stay "Sent".
+
+| Setting | Function | Read → reply / notification | Evidence | Notes |
+|---|---|---|---|---|
+| NC / ambient | 62 | `66 02` → `67/69 02 effect ncType ncValue asmType asmId level` | HW (read), APK | Every field is kept. The mode comes from the NC type and value, not only the effect and level: a device can report noise cancelling while still carrying its last ambient level. For the level-adjustment type (what the client writes) level 0 also means NC, the rule the hardware session relied on. Still read once on connect without needing `07`, as before. No extra read after writes — the XM4's notifications were seen to follow. |
+| Equalizer | 51 | `56 01` → `57/59 01 preset count levels…` | APK (layout), GB (bias) | Count validated. Levels decode only for clear bass + 5 bands, with the existing +10 bias; another shape keeps the old bands and disables the band editor. A reported `FF` is recorded as Manual (the client's own write marker). Gain conversion and persistent Custom 1/2 editing are **not** settled and were not changed. |
+| VPT / sound position | 41 / 42 | `46 01` / `46 02` → `47/49 type preset` (table 1) | APK | Each card is gated on its own function. Table-2 `47/49` is voice guidance. |
+| Speak-to-Chat toggle | F5 | `F6 05` → `F7 05 00 v` (RET), `F9 05 01 v` (NTFY) | APK | Different sub-types for RET and NTFY. `F9 05 02 v` is a preview and never changes the setting. |
+| Speak-to-Chat details | F5 | `FA 05` → `FB/FD 05 00 sens focus exit` | APK (inferred from the `FC` body) | Exit times are FAST/MID/SLOW/NONE; the UI no longer claims durations. |
+| DSEE | E2 | `E6 02` → `E7/E9 02 00 v` | APK, GB | The setting only. `E7/E9 01` (connection priority) is not decoded yet. |
+| Voice guidance | 39 | `46 01 01` on table 2 → `47/49 01 01 v` | APK (RET/NTFY), GB (GET) | Inquiry and detail bytes validated. |
+| Auto power-off | F4 | `F6 04` → `F7/F9 04 01 active selected` | APK | Both elements are kept. Choosing "off" or "when removed" keeps the selected timer instead of overwriting it with `00`. Choices offered: the model's known list (XM4: off / when taken off — from Gadgetbridge and the earlier XM4 notes, not a capture) plus anything the device reports. The `F1 04` capability layout is not recovered. |
+
+Not done here: the EQ (`50/51`), VPT (`40/41`), audio (`E0/E1`) and auto power-off (`F0/F1 04`)
+capability layouts were not recovered, so ranges and choices come from the reported state and the
+model, not from capability metadata.
+
 ## XM4 hardware pass
 
 Not yet run. To be completed on a WH-1000XM4 before any APK-only behaviour is described as
@@ -52,3 +74,8 @@ working:
    answer `06 01`, discovery stays Unknown and the new read-backs do not run.
 3. Capture each `D1` reply: which slot carries `TOUCH_PANEL_SETTING` / `MULTIPOINT_SETTING`.
 4. Capture the `F1 03` reply.
+5. For each existing setting: read on connect → change it in Aural → confirm the chip reaches
+   Confirmed → change it with a physical button or Sony's app → confirm Aural follows.
+   Specifically check that the `57` equalizer reply has 6 levels with the +10 bias, the
+   Speak-to-Chat `FB` layout, and the voice-guidance `46 01 01` read.
+6. Auto power-off: capture `F7 04` with each mode, and whether the XM4 really offers no timers.

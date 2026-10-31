@@ -63,11 +63,18 @@ class HeadphonesController : public QObject
     Q_PROPERTY(bool supportsSpeakToChat READ supportsSpeakToChat NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsMultipoint READ supportsMultipoint NOTIFY capabilitiesChanged)
 
-    // Which parts of the control surface this connection actually gets.
+    // Which parts of the control surface this connection actually gets. Each follows its own
+    // advertised function ID once the device has answered the capability query; until then a
+    // recognised model keeps the controls it always had.
     Q_PROPERTY(bool ambientAvailable READ ambientAvailable NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool equalizerAvailable READ equalizerAvailable NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool spatialAvailable READ spatialAvailable NOTIFY capabilitiesChanged)
-    // DSEE, voice guidance and auto power off: write-only, no capability bit, no read-back.
+    Q_PROPERTY(bool vptAvailable READ vptAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool soundPositionAvailable READ soundPositionAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool dseeAvailable READ dseeAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool voiceGuidanceAvailable READ voiceGuidanceAvailable NOTIFY capabilitiesChanged)
+    Q_PROPERTY(bool autoPowerOffAvailable READ autoPowerOffAvailable NOTIFY capabilitiesChanged)
+    // Any of DSEE, voice guidance or auto power-off.
     Q_PROPERTY(bool systemSettingsAvailable READ systemSettingsAvailable NOTIFY capabilitiesChanged)
     // Non-empty when controls are being withheld, and says why. Empty otherwise.
     Q_PROPERTY(QString limitedControlReason READ limitedControlReason NOTIFY capabilitiesChanged)
@@ -88,11 +95,14 @@ class HeadphonesController : public QObject
     Q_PROPERTY(bool focusOnVoiceAvailable READ focusOnVoiceAvailable NOTIFY ambientChanged)
     Q_PROPERTY(bool optimizing READ optimizing NOTIFY optimizerChanged)
 
-    // Equalizer
+    // Equalizer. eqPreset is an index into the UI preset table, or -1 when the device reports
+    // a preset that table does not contain.
     Q_PROPERTY(int eqPreset READ eqPreset WRITE setEqPreset NOTIFY eqChanged)
     Q_PROPERTY(int eqClearBass READ eqClearBass WRITE setEqClearBass NOTIFY eqChanged)
     Q_PROPERTY(QVariantList eqBands READ eqBands NOTIFY eqChanged)
     Q_PROPERTY(bool eqManual READ eqManual NOTIFY eqChanged)
+    // False once the device reports a band layout other than clear bass + 5 bands.
+    Q_PROPERTY(bool eqBandsEditable READ eqBandsEditable NOTIFY eqChanged)
 
     // Spatial sound (mutually exclusive)
     Q_PROPERTY(int soundPosition READ soundPosition WRITE setSoundPosition NOTIFY spatialChanged)
@@ -104,10 +114,15 @@ class HeadphonesController : public QObject
     Q_PROPERTY(int s2cAutoOff READ s2cAutoOff WRITE setS2cAutoOff NOTIFY s2cChanged)
     Q_PROPERTY(bool s2cVoice READ s2cVoice WRITE setS2cVoice NOTIFY s2cChanged)
 
-    // System / sound quality
+    // System / sound quality. Values follow the device's read-back when it gives one.
     Q_PROPERTY(bool dsee READ dsee WRITE setDsee NOTIFY systemChanged)
     Q_PROPERTY(bool voiceGuidance READ voiceGuidance WRITE setVoiceGuidance NOTIFY systemChanged)
+    // An AUTO_POWER_OFF value: 0 off, 1-4 timers, 5 when taken off.
     Q_PROPERTY(int autoPowerOff READ autoPowerOff WRITE setAutoPowerOff NOTIFY systemChanged)
+    // The AUTO_POWER_OFF values this device offers: the model's known choices plus whatever the
+    // device itself has reported. Nothing outside this list is sent. Moves with the connection
+    // (the model) and with a reported element, both of which emit capabilitiesChanged.
+    Q_PROPERTY(QVariantList autoPowerOffOptions READ autoPowerOffOptions NOTIFY capabilitiesChanged)
 
     // Multipoint
     Q_PROPERTY(QVariantList mpDevices READ mpDevices NOTIFY multipointChanged)
@@ -142,6 +157,11 @@ public:
     bool ambientAvailable();
     bool equalizerAvailable();
     bool spatialAvailable();
+    bool vptAvailable();
+    bool soundPositionAvailable();
+    bool dseeAvailable();
+    bool voiceGuidanceAvailable();
+    bool autoPowerOffAvailable();
     bool systemSettingsAvailable();
     QString limitedControlReason();
 
@@ -160,6 +180,7 @@ public:
     int eqClearBass() const { return _eqClearBass; }
     QVariantList eqBands() const;
     bool eqManual() const;
+    bool eqBandsEditable();
     void setEqPreset(int v);
     void setEqClearBass(int v);
 
@@ -180,6 +201,7 @@ public:
     bool dsee() const { return _dsee; }
     bool voiceGuidance() const { return _voiceGuidance; }
     int autoPowerOff() const { return _autoPowerOff; }
+    QVariantList autoPowerOffOptions();
     void setDsee(bool v);
     void setVoiceGuidance(bool v);
     void setAutoPowerOff(int v);
@@ -221,12 +243,16 @@ private:
     // Is this feature offered on this connection? Supported -> yes, Unsupported -> no, and
     // Unknown -> only for a model we recognise (see the Q_PROPERTY block above).
     bool featureAvailable(DEVICE_CAPABILITIES cap);
+    bool functionAvailable(FUNCTION_TYPE fn);
     void pump();
     void handleConnectionSetup();
     void teardownConnection();
     void resetUiState();
     void pollOsBattery();
     void emitLiveDeltas();
+    // Copy values the device reported into the UI state. Skips a setting while a user change
+    // to it is still waiting to be sent, so a notification cannot snap the control back.
+    void syncReadBack(const SettingsStatus& statuses);
     void refreshSettingStatus();
     void setConn(Conn c);
     void setSyncing(bool s);
@@ -274,11 +300,23 @@ private:
     bool _cCharging = false;
     unsigned int _cCaps = 0;
     bool _cCapsKnown = false;
+    std::vector<unsigned char> _cFunctions;
     bool _cOptimizing = false;
     bool _cFocusAvail = false;
     bool _cAmbientOn = false;
     int _cAsmLevel = 0;
     bool _cFocusVoice = false;
+    // Last engine values copied into the UI, per read-back setting.
+    EqualizerConfig _cEq;
+    int _cEqLevelCount = -1;
+    int _cVpt = 0;
+    SOUND_POSITION_PRESET _cPosition = SOUND_POSITION_PRESET::OFF;
+    S2C_TOGGLE _cS2c = S2C_TOGGLE::INACTIVE;
+    unsigned int _cS2cOptions = 0;
+    bool _cDsee = false;
+    bool _cVoiceGuidance = false;
+    AutoPowerOffConfig _cAutoPowerOff;
+    int _cReportedPowerOff = -1;
 
     QVariantMap _settingStatus;
 

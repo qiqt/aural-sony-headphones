@@ -273,6 +273,112 @@ TEST(controller_capability_reply_withdraws_unadvertised_controls)
 	CHECK(!f.hp->supportsMultipoint());
 }
 
+// The device's own values replace the app's defaults once they are read back.
+TEST(controller_read_back_replaces_defaults_with_the_device_values)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 06 51 E2 39 F4 F5 41"))
+		.on("56 01", replies::hex("57 01 11 06 0A 0A 0A 0A 0A 0A"))     // Excited
+		.on("E6 02", replies::hex("E7 02 00 01"))                       // DSEE on
+		.on("46 01 01", replies::hex("47 01 01 01"), DATA_TYPE::DATA_MDR_NO2, DATA_TYPE::DATA_MDR_NO2)
+		.on("F6 04", replies::hex("F7 04 01 10 00"))                    // when taken off
+		.on("F6 05", replies::hex("F7 05 00 01"))                       // Speak-to-Chat on
+		.on("FA 05", replies::hex("FB 05 00 01 01 02"))                 // high, voice focus, slow
+		.on("46 01", replies::hex("47 01 03"));                         // VPT concert hall
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+
+	auto status = [&](const char* key) { return f.hp->settingStatus().value(key).toString().toStdString(); };
+	CHECK_MSG(spinUntil([&] {
+		return status("dsee") == "confirmed" && status("voiceGuidance") == "confirmed" &&
+			status("autoPowerOff") == "confirmed" && status("speakToChat") == "confirmed" &&
+			status("equalizer") == "confirmed";
+	}), "every advertised setting should be read back on connect");
+
+	CHECK_EQ(f.hp->dsee(), true);
+	CHECK_EQ(f.hp->voiceGuidance(), true);
+	CHECK_EQ(f.hp->autoPowerOff(), static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF));
+	CHECK_EQ(f.hp->s2cEnabled(), true);
+	CHECK_EQ(f.hp->s2cSensitivity(), 1);
+	CHECK_EQ(f.hp->s2cVoice(), true);
+	CHECK_EQ(f.hp->s2cAutoOff(), 2);
+	CHECK_EQ(f.hp->eqPreset(), 2);   // Excited
+	CHECK(spinUntil([&] { return f.hp->vptType() == 3; }));
+
+	// Sound position (42) was not advertised: its control goes, VPT's stays.
+	CHECK(f.hp->vptAvailable());
+	CHECK(!f.hp->soundPositionAvailable());
+	CHECK(f.hp->spatialAvailable());
+}
+
+// "A different reported value should be shown as the device's actual state."
+TEST(controller_device_value_replaces_a_request_it_did_not_apply)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 01 E2"))
+		.on("E6 02", replies::hex("E7 02 00 00"));   // DSEE stays off whatever we write
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK(spinUntil([&] { return f.hp->settingStatus().value("dsee").toString() == "confirmed"; }));
+
+	f.hp->setDsee(true);
+	CHECK_EQ(f.hp->dsee(), true);   // the request shows while it is in flight
+	CHECK(spinUntil([&] { return wasSent(*f.fake, "E8 02 00 01"); }));
+	CHECK_MSG(spinUntil([&] {
+		return !f.hp->dsee() && f.hp->settingStatus().value("dsee").toString() == "confirmed";
+	}), "the read-back after the write must replace the request with the device's value");
+}
+
+TEST(controller_unadvertised_system_settings_are_withdrawn)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 01 62"));
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK(spinUntil([&] { return f.hp->capabilitiesKnown(); }));
+
+	CHECK(!f.hp->dseeAvailable());
+	CHECK(!f.hp->voiceGuidanceAvailable());
+	CHECK(!f.hp->autoPowerOffAvailable());
+	CHECK(!f.hp->systemSettingsAvailable());
+	CHECK(!f.hp->equalizerAvailable());
+
+	f.hp->setDsee(true);
+	spinFor(std::chrono::milliseconds(200));
+	CHECK_EQ(f.hp->dsee(), false);
+	CHECK(!wasSent(*f.fake, "E8 02 00 01"));
+}
+
+TEST(controller_auto_power_off_offers_only_the_models_choices)
+{
+	ControllerFixture f({ XM4, XM3 });
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+
+	const QVariantList xm4 = f.hp->autoPowerOffOptions();
+	CHECK_EQ(xm4.size(), 2);
+	CHECK(xm4.contains(static_cast<int>(AUTO_POWER_OFF::OFF)));
+	CHECK(xm4.contains(static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF)));
+
+	// A timer the XM4 does not offer is refused before it reaches the wire.
+	f.hp->setAutoPowerOff(static_cast<int>(AUTO_POWER_OFF::AFTER_30_MIN));
+	CHECK_EQ(f.hp->autoPowerOff(), static_cast<int>(AUTO_POWER_OFF::OFF));
+	f.hp->setAutoPowerOff(static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF));
+	CHECK(spinUntil([&] { return wasSent(*f.fake, "F8 04 01 10 00"); }));
+	CHECK(!wasSent(*f.fake, "F8 04 01 01 01"));
+
+	f.hp->disconnectDevice();
+	CHECK(spinUntil([&] { return !f.hp->connected(); }));
+	CHECK(f.connectTo(XM3));
+	CHECK_EQ(f.hp->autoPowerOffOptions().size(), 6);
+}
+
 int main(int argc, char* argv[])
 {
 	QCoreApplication app(argc, argv);

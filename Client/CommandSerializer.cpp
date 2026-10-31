@@ -177,8 +177,8 @@ namespace CommandSerializer
 
 	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode)
 	{
-		// Auto power-off. Payload: <cmd> 04 01 <code0> <code1>. The 0xf8 command is shared with
-		// other system settings; sub-byte 0x04 selects the auto-power-off function.
+		// The fixed second field is the old Gadgetbridge table. Headphones no longer uses this
+		// overload: it preserves the device's selected timer instead (see setAutoPowerOff).
 		unsigned char c0 = 0x11, c1 = 0x00; // default: OFF (do not power off)
 		switch (mode)
 		{
@@ -189,14 +189,50 @@ namespace CommandSerializer
 		case AUTO_POWER_OFF::AFTER_3_HOUR:   c0 = 0x03; c1 = 0x03; break;
 		case AUTO_POWER_OFF::WHEN_TAKEN_OFF: c0 = 0x10; c1 = 0x00; break;
 		}
+		return serializeAutoPowerOff(c0, c1);
+	}
 
-		Buffer ret;
-		ret.push_back(static_cast<unsigned char>(COMMAND_TYPE::AUTO_POWER_OFF_SET));
-		ret.push_back(0x04);
-		ret.push_back(0x01);
-		ret.push_back(c0);
-		ret.push_back(c1);
-		return ret;
+	Buffer serializeAutoPowerOff(unsigned char activeElement, unsigned char selectedTimeElement)
+	{
+		// <F8> 04 01 <active element> <selected time element>. F8 is shared with other system
+		// settings; selector 04 is auto power-off, 01 its ACTIVE_AND_SELECT_TIME parameter.
+		return { static_cast<char>(v1::t1::SYSTEM_SET_PARAM), static_cast<char>(v1::SYSTEM_AUTO_POWER_OFF),
+			static_cast<char>(v1::APO_ACTIVE_AND_SELECT_TIME), static_cast<char>(activeElement),
+			static_cast<char>(selectedTimeElement) };
+	}
+
+	Buffer serializeNcAsmQuery()
+	{
+		return { static_cast<char>(v1::t1::NCASM_GET_PARAM),
+			static_cast<char>(NC_ASM_INQUIRED_TYPE::NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE) };
+	}
+
+	Buffer serializeEqualizerQuery()
+	{
+		return { static_cast<char>(v1::t1::EQEBB_GET_PARAM), static_cast<char>(v1::EQ_PRESET) };
+	}
+
+	Buffer serializeVptQuery(VPT_INQUIRED_TYPE type)
+	{
+		return { static_cast<char>(v1::t1::VPT_GET_PARAM), static_cast<char>(type) };
+	}
+
+	Buffer serializeAudioQuery(unsigned char selector)
+	{
+		return { static_cast<char>(v1::t1::AUDIO_GET_PARAM), static_cast<char>(selector) };
+	}
+
+	Buffer serializeSpeakToChatDetailsQuery()
+	{
+		return { static_cast<char>(v1::t1::SYSTEM_GET_EXTENDED_PARAM), static_cast<char>(v1::SYSTEM_SMART_TALKING) };
+	}
+
+	Buffer serializeVoiceGuidanceQuery()
+	{
+		// Inquired type VOICE_GUIDANCE_SETTING, detail ON_OFF - the same two bytes the SET and the
+		// RET carry before the value.
+		return { static_cast<char>(v1::t2::VOICE_GUIDANCE_GET_PARAM), static_cast<char>(v1::VOICE_GUIDANCE_SETTING),
+			static_cast<char>(v1::VOICE_GUIDANCE_DETAIL_ON_OFF) };
 	}
 
 	// ---- discovery and read queries -------------------------------------------------------
@@ -469,6 +505,149 @@ namespace CommandSerializer
 			u8(p, 3) > 0x01)
 			return std::nullopt;
 		return ToggleReport{ u8(p, 1), u8(p, 3) == 0x01 };
+	}
+
+	std::optional<EqualizerReport> parseEqualizer(const Message& msg)
+	{
+		// [57|59][01 preset EQ][preset][count][count level bytes]
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() < 4)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t1::EQEBB_RET_PARAM && cmd != v1::t1::EQEBB_NTFY_PARAM)
+			return std::nullopt;
+		if (u8(p, 1) != v1::EQ_PRESET)
+			return std::nullopt;
+		// EqPresetId: OFF and the 01-1F preset range, CUSTOM / USER_SETTING1-5, UNSPECIFIED.
+		const unsigned char preset = u8(p, 2);
+		const bool presetOk = preset <= 0x1F || (preset >= 0xA0 && preset <= 0xA5) || preset == 0xFF;
+		const size_t count = u8(p, 3);
+		if (!presetOk || p.size() != 4 + count)
+			return std::nullopt;
+
+		EqualizerReport report;
+		report.preset = preset;
+		for (size_t i = 4; i < p.size(); ++i)
+			report.levels.push_back(u8(p, i));
+		return report;
+	}
+
+	std::optional<SpatialReport> parseVpt(const Message& msg)
+	{
+		// Table 1 only: [47|49][01 VPT | 02 sound position][preset]. Table-2 0x47/0x49 are voice
+		// guidance and never reach this decoder.
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 3)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t1::VPT_RET_PARAM && cmd != v1::t1::VPT_NTFY_PARAM)
+			return std::nullopt;
+
+		const unsigned char type = u8(p, 1);
+		const unsigned char preset = u8(p, 2);
+		if (type == static_cast<unsigned char>(VPT_INQUIRED_TYPE::VPT))
+		{
+			// VptPresetId: OFF, four venues, 05-0F reserved.
+			if (preset > 0x0F)
+				return std::nullopt;
+		}
+		else if (type == static_cast<unsigned char>(VPT_INQUIRED_TYPE::SOUND_POSITION))
+		{
+			// SoundPositionPresetId: OFF, front left/right/centre, rear left/right.
+			if (!(preset <= 0x03 || preset == 0x11 || preset == 0x12))
+				return std::nullopt;
+		}
+		else
+			return std::nullopt;
+
+		return SpatialReport{ static_cast<VPT_INQUIRED_TYPE>(type), preset };
+	}
+
+	std::optional<SpeakToChatToggleReport> parseSpeakToChatToggle(const Message& msg)
+	{
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 4)
+			return std::nullopt;
+		if (u8(p, 1) != v1::SYSTEM_SMART_TALKING || u8(p, 3) > 0x01)
+			return std::nullopt;
+
+		const unsigned char cmd = u8(p, 0);
+		const unsigned char subtype = u8(p, 2);
+		SpeakToChatToggleReport report;
+		report.enabled = u8(p, 3) == 0x01;
+		// The RET and the NTFY use different sub-type enums for the same toggle.
+		if (cmd == v1::t1::SYSTEM_RET_PARAM && subtype == v1::S2C_SETTING_TYPE_ON_OFF)
+			return report;
+		if (cmd == v1::t1::SYSTEM_NTFY_PARAM && subtype == v1::S2C_PARAM_MODE_ON_OFF)
+			return report;
+		if (cmd == v1::t1::SYSTEM_NTFY_PARAM && subtype == v1::S2C_PARAM_PREVIEW_ON_OFF)
+		{
+			report.preview = true;
+			return report;
+		}
+		return std::nullopt;
+	}
+
+	std::optional<SpeakToChatDetailsReport> parseSpeakToChatDetails(const Message& msg)
+	{
+		// [FB|FD][05][00 detail type 1][sensitivity][voice focus][exit time] - the same body as
+		// the FC write.
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 6)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t1::SYSTEM_RET_EXTENDED_PARAM && cmd != v1::t1::SYSTEM_NTFY_EXTENDED_PARAM)
+			return std::nullopt;
+		if (u8(p, 1) != v1::SYSTEM_SMART_TALKING || u8(p, 2) != v1::S2C_DETAIL_TYPE_1)
+			return std::nullopt;
+		if (u8(p, 3) > 0x02 || u8(p, 4) > 0x01 || u8(p, 5) > 0x03)
+			return std::nullopt;
+		return SpeakToChatDetailsReport{ u8(p, 3), u8(p, 4) == 0x01, u8(p, 5) };
+	}
+
+	std::optional<bool> parseUpscaling(const Message& msg)
+	{
+		// [E7|E9][02 upscaling][00 AUTO_OFF type][00 off | 01 auto]
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 4)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t1::AUDIO_RET_PARAM && cmd != v1::t1::AUDIO_NTFY_PARAM)
+			return std::nullopt;
+		if (u8(p, 1) != v1::AUDIO_UPSCALING || u8(p, 2) != v1::UPSCALING_SETTING_AUTO_OFF || u8(p, 3) > 0x01)
+			return std::nullopt;
+		return u8(p, 3) == 0x01;
+	}
+
+	std::optional<bool> parseVoiceGuidance(const Message& msg)
+	{
+		// Table 2 only: [47|49][01 setting][01 ON_OFF detail][value]. The accessors Sony uses
+		// read the value at index 3.
+		const Buffer& p = msg.messageBytes;
+		if (!isTable2(msg) || p.size() != 4)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t2::VOICE_GUIDANCE_RET_PARAM && cmd != v1::t2::VOICE_GUIDANCE_NTFY_PARAM)
+			return std::nullopt;
+		if (u8(p, 1) != v1::VOICE_GUIDANCE_SETTING || u8(p, 2) != v1::VOICE_GUIDANCE_DETAIL_ON_OFF || u8(p, 3) > 0x01)
+			return std::nullopt;
+		return u8(p, 3) == 0x01;
+	}
+
+	std::optional<AutoPowerOffReport> parseAutoPowerOff(const Message& msg)
+	{
+		// [F7|F9][04][01 ACTIVE_AND_SELECT_TIME][active element][selected time element]
+		const Buffer& p = msg.messageBytes;
+		if (!isTable1(msg) || p.size() != 5)
+			return std::nullopt;
+		const unsigned char cmd = u8(p, 0);
+		if (cmd != v1::t1::SYSTEM_RET_PARAM && cmd != v1::t1::SYSTEM_NTFY_PARAM)
+			return std::nullopt;
+		if (u8(p, 1) != v1::SYSTEM_AUTO_POWER_OFF || u8(p, 2) != v1::APO_ACTIVE_AND_SELECT_TIME)
+			return std::nullopt;
+		if (!v1::isAutoPowerOffElement(u8(p, 3)) || !v1::isAutoPowerOffElement(u8(p, 4)))
+			return std::nullopt;
+		return AutoPowerOffReport{ u8(p, 3), u8(p, 4) };
 	}
 
 }

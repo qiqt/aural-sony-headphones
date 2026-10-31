@@ -5,8 +5,8 @@ import Aural
 // Says what the app actually knows about a setting, in the app's own words.
 //
 // The distinction that matters: "Sent" means the headphones acknowledged the frame.
-// "Confirmed" means they reported the value back. Only ambient sound has a read-back today,
-// so most controls honestly stop at "Sent".
+// "Confirmed" means they reported the value back. A setting is read back only when the
+// headphones advertise it; otherwise it honestly stops at "Sent".
 Rectangle {
     id: chip
 

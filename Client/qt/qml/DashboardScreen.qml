@@ -83,7 +83,7 @@ Item {
                         Text { text: "EQUALIZER"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm; font.weight: Font.Bold; font.letterSpacing: 1 }
                         Item { Layout.fillWidth: true }
                         Rectangle { radius: Theme.radiusFull; color: Theme.primaryContainer; implicitWidth: pn.implicitWidth + Theme.md; implicitHeight: 22
-                            Text { id: pn; anchors.centerIn: parent; text: root.presetNames[Hp.eqPreset]; color: Theme.primaryContainerText; font.pixelSize: Theme.labelMd; font.weight: Font.DemiBold } }
+                            Text { id: pn; anchors.centerIn: parent; text: Hp.eqPreset >= 0 ? root.presetNames[Hp.eqPreset] : "Other"; color: Theme.primaryContainerText; font.pixelSize: Theme.labelMd; font.weight: Font.DemiBold } }
                     }
                     EqCurve {
                         Layout.fillWidth: true
@@ -109,7 +109,7 @@ Item {
                     Text { text: "Manage device smart features."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
 
                     Rectangle {
-                        visible: Hp.systemSettingsAvailable
+                        visible: Hp.dseeAvailable
                         Layout.fillWidth: true
                         radius: Theme.radiusMd; color: Theme.surfaceContainerLow
                         implicitHeight: dseeRow.implicitHeight + 2 * Theme.sm
@@ -125,7 +125,7 @@ Item {
                         }
                     }
                     Rectangle {
-                        visible: Hp.systemSettingsAvailable
+                        visible: Hp.voiceGuidanceAvailable
                         Layout.fillWidth: true
                         radius: Theme.radiusMd; color: Theme.surfaceContainerLow
                         implicitHeight: vgRow.implicitHeight + 2 * Theme.sm

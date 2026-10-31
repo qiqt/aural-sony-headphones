@@ -120,7 +120,7 @@ TEST(settings_ack_means_acknowledged_not_confirmed)
 	CHECK(testing::waitFor([&] { return f.hp.getStatuses().ambient == SettingStatus::Confirmed; }));
 }
 
-TEST(settings_write_only_features_never_reach_confirmed)
+TEST(settings_without_a_read_back_a_write_stays_acknowledged)
 {
 	EngineFixture f;
 	f.start();
@@ -128,9 +128,10 @@ TEST(settings_write_only_features_never_reach_confirmed)
 	f.hp.setVoiceGuidance(true);
 	f.hp.setChanges();
 
-	// There is no voice-guidance read-back in the protocol implementation, so the honest
-	// answer stays "acknowledged".
+	// Nothing advertised voice guidance, so nothing reads it back: the honest answer stays
+	// "acknowledged" rather than turning an ACK into a confirmation.
 	CHECK_EQ(f.hp.getStatuses().voiceGuidance, SettingStatus::Acknowledged);
+	CHECK_EQ(f.hp.hasPendingQueries(), false);
 }
 
 TEST(settings_failed_send_is_reported_and_retryable)

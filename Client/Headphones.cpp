@@ -172,6 +172,16 @@ bool Headphones::supportsFeature(DEVICE_CAPABILITIES cap)
 	return this->featureState(cap) != CapabilityState::Unsupported;
 }
 
+std::vector<unsigned char> Headphones::supportedFunctions()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	std::vector<unsigned char> ids;
+	for (size_t id = 0; id < this->_functions.size(); ++id)
+		if (this->_functions.test(id))
+			ids.push_back(static_cast<unsigned char>(id));
+	return ids;
+}
+
 bool Headphones::_advertisedLocked(FUNCTION_TYPE fn) const
 {
 	return this->_capabilitiesKnown && this->_functions.test(static_cast<unsigned char>(fn));
@@ -249,9 +259,22 @@ SettingsStatus Headphones::getStatuses()
 	return s;
 }
 
-void Headphones::setEqualizer(const EqualizerConfig& cfg)
+void Headphones::setEqualizer(const EqualizerConfig& requested)
 {
+	EqualizerConfig cfg = requested;
+	// Callers fill preset from the signed EQ_PRESET enum (MANUAL arrives as -96). Keep the
+	// EqPresetId byte instead, so a request and a device report of one preset compare equal.
+	cfg.preset = static_cast<unsigned char>(cfg.preset);
+
 	std::lock_guard guard(this->_propertyMtx);
+	// Only MANUAL sends band values. For any other preset the bands are whatever the device
+	// reports, so a request must not differ from the current state by bands it never sends -
+	// otherwise a reported curve would make re-selecting the same preset look like a change.
+	if (cfg.preset != static_cast<unsigned char>(EQ_PRESET::MANUAL))
+	{
+		cfg.clearBass = this->_eq.desired.clearBass;
+		cfg.bands = this->_eq.desired.bands;
+	}
 	this->_eq.setDesired(cfg);
 }
 
@@ -288,13 +311,55 @@ bool Headphones::getVoiceGuidance()
 void Headphones::setAutoPowerOff(AUTO_POWER_OFF val)
 {
 	std::lock_guard guard(this->_propertyMtx);
-	this->_autoPowerOff.setDesired(val);
+
+	AutoPowerOffConfig cfg;
+	cfg.active = autoPowerOffElement(val);
+	if (v1::isTimedAutoPowerOffElement(cfg.active))
+	{
+		// Choosing a timer selects it as well.
+		cfg.selectedTime = cfg.active;
+	}
+	else
+	{
+		// "Off" and "when removed" leave the timer selection alone. desired follows the device's
+		// report whenever nothing is pending and keeps a pending choice when something is, so it
+		// is the newest knowledge of the timer either way. Before any report it holds the value
+		// the client always sent.
+		cfg.selectedTime = this->_autoPowerOff.desired.selectedTime;
+	}
+	this->_autoPowerOff.setDesired(cfg);
 }
 
 AUTO_POWER_OFF Headphones::getAutoPowerOff()
 {
 	std::lock_guard guard(this->_propertyMtx);
+	return autoPowerOffMode(this->_autoPowerOff.current.active);
+}
+
+AutoPowerOffConfig Headphones::getAutoPowerOffConfig()
+{
+	std::lock_guard guard(this->_propertyMtx);
 	return this->_autoPowerOff.current;
+}
+
+std::optional<unsigned char> Headphones::getReportedAutoPowerOffElement()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_autoPowerOff.reported)
+		return std::nullopt;
+	return this->_autoPowerOff.reported->active;
+}
+
+std::optional<CommandSerializer::NcAsmReport> Headphones::getNcAsmReport()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_ncAsmReport;
+}
+
+int Headphones::getEqualizerLevelCount()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_eqLevelCount;
 }
 
 bool Headphones::isChanged()
@@ -346,48 +411,56 @@ void Headphones::setChanges()
 		});
 	});
 
+	// Every write that went out is followed by a read of the same setting (when the device
+	// advertises it): the ACK says the frame arrived, the read says what the device now holds.
 	run([&] {
-		this->_sendPending(this->_speakToChat, [&](S2C_TOGGLE val) {
+		if (this->_sendPending(this->_speakToChat, [&](S2C_TOGGLE val) {
 			this->_conn.sendCommand(CommandSerializer::serializeXM4SpeakToChat(val));
-		});
+		}))
+			this->_queueReadBack(ReadBack::SpeakToChat);
 	});
 
 	run([&] {
-		this->_sendPending(this->_s2cOptions, [&](unsigned int opts) {
+		if (this->_sendPending(this->_s2cOptions, [&](unsigned int opts) {
 			unsigned char sensitivity = static_cast<unsigned char>((opts >> 16) & 0xff);
 			unsigned char voice = static_cast<unsigned char>((opts >> 8) & 0xff);
 			unsigned char offTime = static_cast<unsigned char>(opts & 0xff);
 			this->_conn.sendCommand(CommandSerializer::serializeXM4_S2C_Options(sensitivity, voice, offTime));
-		});
+		}))
+			this->_queueReadBack(ReadBack::SpeakToChatDetails);
 	});
 
 	run([&] {
-		this->_sendPending(this->_eq, [&](const EqualizerConfig& cfg) {
+		if (this->_sendPending(this->_eq, [&](const EqualizerConfig& cfg) {
 			// MANUAL means "apply these band sliders"; every other id just selects the preset.
-			if (cfg.preset == static_cast<int>(EQ_PRESET::MANUAL))
+			if (cfg.preset == static_cast<unsigned char>(EQ_PRESET::MANUAL))
 				this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
 			else
 				this->_conn.sendCommand(CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(cfg.preset)));
-		});
+		}))
+			this->_queueReadBack(ReadBack::Equalizer);
 	});
 
 	run([&] {
-		this->_sendPending(this->_audioUpsampling, [&](bool val) {
+		if (this->_sendPending(this->_audioUpsampling, [&](bool val) {
 			this->_conn.sendCommand(CommandSerializer::serializeAudioUpsampling(val));
-		});
+		}))
+			this->_queueReadBack(ReadBack::Dsee);
 	});
 
 	run([&] {
-		this->_sendPending(this->_voiceGuidance, [&](bool val) {
+		if (this->_sendPending(this->_voiceGuidance, [&](bool val) {
 			// Voice guidance lives in the COMMAND_2 namespace, so it goes out as DATA_MDR_NO2.
 			this->_conn.sendCommand(CommandSerializer::serializeVoiceGuidance(val), DATA_TYPE::DATA_MDR_NO2);
-		});
+		}))
+			this->_queueReadBack(ReadBack::VoiceGuidance);
 	});
 
 	run([&] {
-		this->_sendPending(this->_autoPowerOff, [&](AUTO_POWER_OFF val) {
-			this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(val));
-		});
+		if (this->_sendPending(this->_autoPowerOff, [&](const AutoPowerOffConfig& cfg) {
+			this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(cfg.active, cfg.selectedTime));
+		}))
+			this->_queueReadBack(ReadBack::AutoPowerOff);
 	});
 
 	run([&] { this->_pushNcAsm(); });
@@ -509,6 +582,56 @@ void Headphones::_pushSpatial()
 	std::lock_guard guard(this->_propertyMtx);
 	this->_vptType.markSent(vptRev, vpt);
 	this->_surroundPosition.markSent(positionRev, position);
+	// The two are exclusive on the device, so read both: one frame may have changed either.
+	this->_queueReadBackLocked(ReadBack::Vpt);
+	this->_queueReadBackLocked(ReadBack::SoundPosition);
+}
+
+void Headphones::_queueReadBack(ReadBack which)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_queueReadBackLocked(which);
+}
+
+void Headphones::_queueReadBackLocked(ReadBack which)
+{
+	// Only what the device advertised this session. With no valid 07 reply nothing is queried:
+	// the setting stays honestly "Sent" rather than asking a question the device may not know.
+	switch (which)
+	{
+	case ReadBack::Equalizer:
+		if (this->_advertisedLocked(FUNCTION_TYPE::PRESET_EQ))
+			this->_enqueueQueryLocked(CommandSerializer::serializeEqualizerQuery());
+		break;
+	case ReadBack::Vpt:
+		if (this->_advertisedLocked(FUNCTION_TYPE::VPT))
+			this->_enqueueQueryLocked(CommandSerializer::serializeVptQuery(VPT_INQUIRED_TYPE::VPT));
+		break;
+	case ReadBack::SoundPosition:
+		if (this->_advertisedLocked(FUNCTION_TYPE::SOUND_POSITION))
+			this->_enqueueQueryLocked(CommandSerializer::serializeVptQuery(VPT_INQUIRED_TYPE::SOUND_POSITION));
+		break;
+	case ReadBack::SpeakToChat:
+		if (this->_advertisedLocked(FUNCTION_TYPE::SMART_TALKING_MODE))
+			this->_enqueueQueryLocked(CommandSerializer::serializeSystemQuery(v1::SYSTEM_SMART_TALKING));
+		break;
+	case ReadBack::SpeakToChatDetails:
+		if (this->_advertisedLocked(FUNCTION_TYPE::SMART_TALKING_MODE))
+			this->_enqueueQueryLocked(CommandSerializer::serializeSpeakToChatDetailsQuery());
+		break;
+	case ReadBack::Dsee:
+		if (this->_advertisedLocked(FUNCTION_TYPE::UPSCALING))
+			this->_enqueueQueryLocked(CommandSerializer::serializeAudioQuery(v1::AUDIO_UPSCALING));
+		break;
+	case ReadBack::VoiceGuidance:
+		if (this->_advertisedLocked(FUNCTION_TYPE::VOICE_GUIDANCE))
+			this->_enqueueQueryLocked(CommandSerializer::serializeVoiceGuidanceQuery(), DATA_TYPE::DATA_MDR_NO2);
+		break;
+	case ReadBack::AutoPowerOff:
+		if (this->_advertisedLocked(FUNCTION_TYPE::AUTO_POWER_OFF))
+			this->_enqueueQueryLocked(CommandSerializer::serializeSystemQuery(v1::SYSTEM_AUTO_POWER_OFF));
+		break;
+	}
 }
 
 // Multipoint connect/disconnect is a *request*: the connected set comes back from the device,
@@ -563,10 +686,7 @@ void Headphones::queryState()
 
 void Headphones::queryNcAsmState()
 {
-	this->_conn.sendCommand({
-		static_cast<char>(COMMAND_TYPE::NCASM_GET_PARAM),
-		static_cast<char>(NC_ASM_INQUIRED_TYPE::NOISE_CANCELLING_AND_AMBIENT_SOUND_MODE)
-	});
+	this->_conn.sendCommand(CommandSerializer::serializeNcAsmQuery());
 }
 
 void Headphones::queryDeviceCapabilities()
@@ -699,13 +819,46 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 		// RET answers our GET; NTFY reports a change made on the device itself (the physical
 		// ANC button).
 		if (auto ncAsm = parseNcAsm(msg))
+			this->_applyNcAsm(*ncAsm);
+		break;
+
+	case v1::t1::VPT_RET_PARAM:
+	case v1::t1::VPT_NTFY_PARAM:
+		// Table-1 only: the same numbers in table 2 are voice guidance.
+		if (auto spatial = parseVpt(msg))
 		{
-			const bool effectOn = ncAsm->effect != static_cast<unsigned char>(NC_ASM_EFFECT::OFF);
-			const bool voice = ncAsm->asmId == static_cast<unsigned char>(ASM_ID::VOICE);
 			std::lock_guard guard(this->_propertyMtx);
-			this->_ambientSoundControl.setState(effectOn);
-			this->_focusOnVoice.setState(voice);
-			this->_asmLevel.setState(ncAsm->asmLevel);
+			if (spatial->type == VPT_INQUIRED_TYPE::VPT)
+				this->_vptType.setState(spatial->preset);
+			else
+				this->_surroundPosition.setState(static_cast<SOUND_POSITION_PRESET>(spatial->preset));
+		}
+		break;
+
+	case v1::t1::EQEBB_RET_PARAM:
+	case v1::t1::EQEBB_NTFY_PARAM:
+		if (auto eq = parseEqualizer(msg))
+			this->_applyEqualizer(*eq);
+		break;
+
+	case v1::t1::AUDIO_RET_PARAM:
+	case v1::t1::AUDIO_NTFY_PARAM:
+		// Selector 02 is the DSEE setting; 01 (connection priority) is not decoded yet.
+		if (auto upscaling = parseUpscaling(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_audioUpsampling.setState(*upscaling);
+		}
+		break;
+
+	case v1::t1::SYSTEM_RET_EXTENDED_PARAM:
+	case v1::t1::SYSTEM_NTFY_EXTENDED_PARAM:
+		if (auto details = parseSpeakToChatDetails(msg))
+		{
+			const unsigned int packed = (static_cast<unsigned int>(details->sensitivity) << 16) |
+				(static_cast<unsigned int>(details->voiceFocus) << 8) | details->exitTime;
+			std::lock_guard guard(this->_propertyMtx);
+			this->_s2cOptions.setState(packed);
 		}
 		break;
 
@@ -775,13 +928,71 @@ void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 			if (this->_wearingControl.support == CapabilityState::Supported)
 				this->_wearingControl.value.setState(value->enabled);
 		}
+		else if (auto powerOff = parseAutoPowerOff(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_autoPowerOff.setState(AutoPowerOffConfig{ powerOff->activeElement, powerOff->selectedTimeElement });
+		}
+		else if (auto s2c = parseSpeakToChatToggle(msg))
+		{
+			// A preview switches Speak-to-Chat on briefly to demonstrate it; the setting itself
+			// has not changed, so a preview never reaches the persistent toggle.
+			if (!s2c->preview)
+			{
+				std::lock_guard guard(this->_propertyMtx);
+				this->_speakToChat.setState(s2c->enabled ? S2C_TOGGLE::ACTIVE : S2C_TOGGLE::INACTIVE);
+			}
+		}
 		break;
 
 	default:
-		// Replies without a decoder here (EQ, spatial, Speak-to-Chat, ...) change nothing: those
-		// settings stay Acknowledged rather than Confirmed. See SettingStatus.
+		// Replies without a decoder here change nothing; their settings stay Acknowledged
+		// rather than Confirmed. See SettingStatus.
 		break;
 	}
+}
+
+void Headphones::_applyNcAsm(const CommandSerializer::NcAsmReport& report)
+{
+	// The three ambient properties hold the mode in the form this client writes it - noise
+	// cancelling is (on, level 0) - so a report in any encoding can confirm a request. The full
+	// report is kept alongside, so the NC setting type and value are not lost.
+	const AmbientMode mode = ambientModeOf(report);
+	const bool effectOn = mode != AmbientMode::Off;
+	const int level = mode == AmbientMode::NoiseCancelling ? 0 : report.asmLevel;
+	const bool voice = report.asmId == static_cast<unsigned char>(ASM_ID::VOICE);
+
+	std::lock_guard guard(this->_propertyMtx);
+	this->_ncAsmReport = report;
+	this->_ambientSoundControl.setState(effectOn);
+	this->_focusOnVoice.setState(voice);
+	this->_asmLevel.setState(level);
+}
+
+void Headphones::_applyEqualizer(const CommandSerializer::EqualizerReport& report)
+{
+	std::lock_guard guard(this->_propertyMtx);
+
+	EqualizerConfig cfg = this->_eq.current;
+	// 0xFF (Sony's UNSPECIFIED) is the marker this client writes for custom bands, so a device
+	// echoing it is reporting the client's own Manual curve.
+	cfg.preset = report.preset == 0xFF ? static_cast<unsigned char>(EQ_PRESET::MANUAL) : report.preset;
+	// The write path sends clear bass then five bands, each biased by +10. Only a reply of that
+	// shape is decoded into band values - with the same convention, since how Sony scales the
+	// bytes is not settled. Any other shape keeps the last known bands; the level count is
+	// recorded so the UI can stop offering a band editor that does not fit the device.
+	bool decodable = report.levels.size() == 6;
+	for (unsigned char level : report.levels)
+		decodable = decodable && level <= 20;
+	if (decodable)
+	{
+		cfg.clearBass = static_cast<int>(report.levels[0]) - 10;
+		cfg.bands.assign(5, 0);
+		for (size_t i = 0; i < 5; ++i)
+			cfg.bands[i] = static_cast<int>(report.levels[i + 1]) - 10;
+	}
+	this->_eqLevelCount = static_cast<int>(report.levels.size());
+	this->_eq.setState(cfg);
 }
 
 void Headphones::_applyTable2(const CommandSerializer::Message& msg)
@@ -807,6 +1018,16 @@ void Headphones::_applyTable2(const CommandSerializer::Message& msg)
 			this->_savedDevices = std::move(savedDevices);
 			this->_dev1.setState(dev1);
 			this->_dev2.setState(dev2);
+		}
+		break;
+
+	case v1::t2::VOICE_GUIDANCE_RET_PARAM:
+	case v1::t2::VOICE_GUIDANCE_NTFY_PARAM:
+		// Table-2 0x47/0x49. The same numbers in table 1 are VPT.
+		if (auto enabled = parseVoiceGuidance(msg))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_voiceGuidance.setState(*enabled);
 		}
 		break;
 
@@ -857,6 +1078,12 @@ void Headphones::_applySupportedFunctions(const std::vector<unsigned char>& ids)
 		this->_enqueueQueryLocked(CommandSerializer::serializeSystemCapabilityQuery(v1::SYSTEM_CONTROL_BY_WEARING));
 	else
 		this->_wearingControl.support = CapabilityState::Unsupported;
+
+	// Read every existing setting the device says it has, so the app starts from the device's
+	// values rather than its own defaults. Each read is skipped unless advertised.
+	for (ReadBack which : { ReadBack::Equalizer, ReadBack::Vpt, ReadBack::SoundPosition, ReadBack::SpeakToChat,
+		ReadBack::SpeakToChatDetails, ReadBack::Dsee, ReadBack::VoiceGuidance, ReadBack::AutoPowerOff })
+		this->_queueReadBackLocked(which);
 }
 
 void Headphones::_applyGeneralSettingCapability(const CommandSerializer::GeneralSettingCapability& cap)
@@ -978,9 +1205,11 @@ void Headphones::resetState()
 	this->_speakToChat.reset(S2C_TOGGLE::INACTIVE);
 	this->_s2cOptions.reset(0);
 	this->_eq.reset(EqualizerConfig{});
+	this->_eqLevelCount = -1;
+	this->_ncAsmReport.reset();
 	this->_audioUpsampling.reset(false);
 	this->_voiceGuidance.reset(false);
-	this->_autoPowerOff.reset(AUTO_POWER_OFF::OFF);
+	this->_autoPowerOff.reset(AutoPowerOffConfig{});
 
 	this->_savedDevices = { BluetoothDevice{"", ""} };
 	this->_dev1.reset(0);

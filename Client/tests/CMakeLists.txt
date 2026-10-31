@@ -21,6 +21,7 @@ add_executable(engine_tests
     test_model.cpp
     test_protocol.cpp
     test_discovery.cpp
+    test_readback.cpp
     ${ENGINE_DIR}/BluetoothWrapper.cpp
     ${ENGINE_DIR}/CommandSerializer.cpp
     ${ENGINE_DIR}/Headphones.cpp
@@ -47,7 +48,7 @@ target_link_libraries(engine_tests PRIVATE Threads::Threads)
 enable_testing()
 
 # One CTest entry per suite: a failure names the area rather than "the tests".
-foreach(suite transport ack settings lifecycle model protocol discovery)
+foreach(suite transport ack settings lifecycle model protocol discovery readback)
     add_test(NAME ${suite} COMMAND engine_tests ${suite})
     set_tests_properties(${suite} PROPERTIES TIMEOUT 120)
 endforeach()
