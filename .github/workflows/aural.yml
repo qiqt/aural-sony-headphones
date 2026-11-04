@@ -128,8 +128,9 @@ jobs:
       - name: Build setup and portable executables
         shell: pwsh
         run: |
-          $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
-          Invoke-WebRequest $url -OutFile build/nsis.zip
+          $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip?download=1'
+          curl.exe --fail --location --retry 3 $url --output build/nsis.zip
+          if ($LASTEXITCODE -ne 0) { throw 'NSIS download failed' }
           $expected = 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8'
           if ((Get-FileHash build/nsis.zip -Algorithm SHA256).Hash -ne $expected) {
             throw 'NSIS download checksum mismatch'
