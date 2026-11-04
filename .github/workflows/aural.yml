@@ -125,9 +125,35 @@ jobs:
             throw "Release tag does not match v$version"
           }
 
-      - name: Upload portable ZIP
+      - name: Build setup and portable executables
+        shell: pwsh
+        run: |
+          $url = 'https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip'
+          Invoke-WebRequest $url -OutFile build/nsis.zip
+          $expected = 'ba63dffc4410ee89193e1cb5a41989991bd77c61068da17e3156d136b7b0b3d8'
+          if ((Get-FileHash build/nsis.zip -Algorithm SHA256).Hash -ne $expected) {
+            throw 'NSIS download checksum mismatch'
+          }
+          Expand-Archive build/nsis.zip build/installer-tools
+          $zip = Get-ChildItem build/aural/Aural-*-win-x64.zip
+          if (@($zip).Count -ne 1) { throw 'Expected one portable ZIP' }
+          python packaging/build-windows-executables.py $zip.FullName `
+            --makensis build/installer-tools/nsis-3.13/makensis.exe --output build/aural/downloads
+          if ($LASTEXITCODE -ne 0) { throw 'Executable packaging failed' }
+
+      - name: Test installation and portable launch
+        shell: pwsh
+        run: |
+          $exe = Get-Item build/aural/package/Aural/appAural.exe
+          ./packaging/test-windows-executables.ps1 -DownloadsDir "$PWD/build/aural/downloads" `
+            -Version $exe.VersionInfo.ProductVersion -ExpectedAppSha256 (Get-FileHash $exe.FullName).Hash
+
+      - name: Upload Windows downloads
         uses: actions/upload-artifact@v4
         with:
           name: aural-win-x64-${{ github.sha }}
-          path: build/aural/Aural-*-win-x64.zip
+          path: |
+            build/aural/Aural-*-win-x64.zip
+            build/aural/downloads/*.exe
+            build/aural/downloads/*.sha256
           if-no-files-found: error

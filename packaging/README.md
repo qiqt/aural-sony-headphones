@@ -1,4 +1,4 @@
-# Windows portable build
+# Windows downloads
 
 From the repository root, using your Qt installation path:
 
@@ -27,6 +27,32 @@ and source revision. Extract it before running `Aural/appAural.exe`.
 The build uses `windeployqt --no-translations` for Qt and CMake's
 `InstallRequiredSystemLibraries` for the MSVC runtime. `windeployqt` is
 called directly to support source paths containing spaces.
+
+## Setup and single-file portable EXE
+
+Install Python 3.9 or later and extract NSIS 3.13, then wrap an existing portable ZIP:
+
+```powershell
+python packaging/build-windows-executables.py <portable-zip-path> `
+  --makensis C:/tools/nsis-3.13/makensis.exe --output build/downloads
+```
+
+The script reads the version from the ZIP and keeps its application files unchanged.
+It creates `Aural-<version>-Setup.exe`, `Aural-<version>-Portable.exe` and checksums.
+The NSIS launcher uses zlib compression; its notice is included in both packages.
+
+Setup installs for the current user and adds a Start menu shortcut and an uninstaller.
+It offers an optional desktop shortcut. Quit Aural from the tray before updating it.
+Uninstall removes packaged files and leaves app preferences and user-created files.
+
+The portable EXE extracts to a unique temporary folder and waits for Aural to exit
+before cleaning up. Closing Aural to the tray keeps it running. Preferences use the
+same Windows account settings as the installed app.
+
+CI checks installation, shortcuts, app version and hash, uninstall, preservation of
+user-created files, portable launch and temporary-file cleanup. Run
+`test-windows-executables.ps1` only in a disposable Windows environment without Aural
+installed or running.
 
 ## Before distributing
 

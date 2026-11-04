@@ -23,15 +23,21 @@ Dashboard and equalizer, shown with demo data.
 - **XM3, XM5 and XM6:** support is in development. These models haven't
   been tested yet.
 
+## Download
+
+Get the Windows x64 build from [Releases](https://github.com/qiqt/aural-sony-headphones/releases/latest):
+
+- **Setup.exe:** installs Aural for your account, adds a Start menu shortcut,
+  and includes an uninstaller. A desktop shortcut is optional.
+- **Portable.exe:** one file to run without installing. It extracts to a temporary
+  folder and removes that folder when you quit Aural from the tray.
+- **Portable ZIP:** extract it and run `Aural/appAural.exe`. Keep the other files
+  in the folder beside it.
+
+All three include the required runtime libraries. App preferences are saved
+for your Windows account.
+
 ## Build and run
-
-Windows builds are available from the
-[Aural workflow](https://github.com/qiqt/aural-sony-headphones/actions/workflows/aural.yml).
-Open a successful run and download its `aural-win-x64` artifact. GitHub requires
-sign-in for artifact downloads. Extract the download and the portable ZIP inside,
-then run `Aural/appAural.exe`.
-
-To build from source:
 
 Requires Windows, Visual Studio 2022 C++ build tools, CMake 3.22 or later,
 and Qt 6.5 or later with Widgets, Quick, QuickControls2, Svg and Test.
