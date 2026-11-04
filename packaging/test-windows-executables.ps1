@@ -51,8 +51,12 @@ if ($registration.UninstallString -ne ('"' + $install + '\Uninstall.exe"')) {
 }
 if (-not (Test-Path $shortcut)) { throw 'Missing Start menu shortcut' }
 $shell = New-Object -ComObject WScript.Shell
-if ($shell.CreateShortcut($shortcut).TargetPath -ne "$install\appAural.exe") {
-    throw 'Incorrect Start menu shortcut target'
+# Let Windows normalize both paths, including short names in the runner's TEMP.
+$expectedShortcut = $shell.CreateShortcut((Join-Path $root 'expected.lnk'))
+$expectedShortcut.TargetPath = "$install\appAural.exe"
+$actualTarget = $shell.CreateShortcut($shortcut).TargetPath
+if ($actualTarget -ne $expectedShortcut.TargetPath) {
+    throw "Incorrect Start menu shortcut target: '$actualTarget'; expected '$($expectedShortcut.TargetPath)'"
 }
 foreach ($license in @('LGPL-3.0-only.txt', 'GPL-3.0-only.txt', 'NSIS-zlib.txt')) {
     if (-not (Test-Path "$install\licenses\$license")) { throw "Missing $license" }
