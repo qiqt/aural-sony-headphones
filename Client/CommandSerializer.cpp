@@ -171,23 +171,6 @@ namespace CommandSerializer
 		return ret;
 	}
 
-	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode)
-	{
-		// The fixed second field is the old Gadgetbridge table. Headphones no longer uses this
-		// overload: it preserves the device's selected timer instead (see setAutoPowerOff).
-		unsigned char c0 = 0x11, c1 = 0x00; // default: OFF (do not power off)
-		switch (mode)
-		{
-		case AUTO_POWER_OFF::OFF:            c0 = 0x11; c1 = 0x00; break;
-		case AUTO_POWER_OFF::AFTER_5_MIN:    c0 = 0x00; c1 = 0x00; break;
-		case AUTO_POWER_OFF::AFTER_30_MIN:   c0 = 0x01; c1 = 0x01; break;
-		case AUTO_POWER_OFF::AFTER_1_HOUR:   c0 = 0x02; c1 = 0x02; break;
-		case AUTO_POWER_OFF::AFTER_3_HOUR:   c0 = 0x03; c1 = 0x03; break;
-		case AUTO_POWER_OFF::WHEN_TAKEN_OFF: c0 = 0x10; c1 = 0x00; break;
-		}
-		return serializeAutoPowerOff(c0, c1);
-	}
-
 	Buffer serializeAutoPowerOff(unsigned char activeElement, unsigned char selectedTimeElement)
 	{
 		// <F8> 04 01 <active element> <selected time element>. F8 is shared with other system

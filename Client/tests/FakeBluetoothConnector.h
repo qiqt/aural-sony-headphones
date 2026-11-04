@@ -55,6 +55,9 @@ public:
 				_cv.notify_all();
 				throw ConnectionClosedException("fake: send failed");
 			}
+			if (_zeroSendAfter == 0) return 0;
+			if (_zeroSendAfter > 0) --_zeroSendAfter;
+			if (_sendChunkSize) length = (std::min)(length, _sendChunkSize);
 			_sentBytes.insert(_sentBytes.end(), buf, buf + length);
 			parsed = _drainCompleteFramesLocked();
 			_sent.insert(_sent.end(), parsed.begin(), parsed.end());
@@ -247,6 +250,18 @@ public:
 	{
 		std::lock_guard<std::mutex> guard(_mtx);
 		_chunkSize = n;
+	}
+
+	void setSendChunkSize(size_t n)
+	{
+		std::lock_guard<std::mutex> guard(_mtx);
+		_sendChunkSize = n;
+	}
+
+	void zeroSendAfter(int writes)
+	{
+		std::lock_guard<std::mutex> guard(_mtx);
+		_zeroSendAfter = writes;
 	}
 
 	// Hold every connect() attempt open until releaseConnect() (or a disconnect()).
@@ -500,6 +515,8 @@ private:
 	bool _batteryBlocked = false;
 
 	size_t _chunkSize = 0;
+	size_t _sendChunkSize = 0;
+	int _zeroSendAfter = -1;
 	int _osBattery = -1;
 	bool _serviceDiscoveryBlocked = false;
     int _serviceLookups = 0;

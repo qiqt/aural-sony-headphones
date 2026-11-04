@@ -860,3 +860,54 @@ int main(int argc, char* argv[])
 	QCoreApplication::setOrganizationName("Aural");
 	return testing::runAll(argc, argv);
 }
+
+TEST(controller_destruction_cancels_a_pending_connection)
+{
+    ControllerFixture f;
+    CHECK(f.waitForDiscovery());
+    f.fake->blockConnect();
+    f.hp->connectTo(QString::fromStdString(XM4.mac), QString::fromStdString(XM4.name));
+    CHECK(f.fake->waitForConnectAttempt());
+    const auto started = std::chrono::steady_clock::now();
+    f.hp.reset();
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(2));
+}
+
+TEST(controller_destruction_releases_an_unacknowledged_command)
+{
+    ControllerFixture f;
+    CHECK(f.waitForDiscovery());
+    f.fake->setAutoAck(false);
+    CHECK(f.connectTo(XM4));
+    CHECK(spinUntil([&] { return !f.fake->sentCommands().empty(); }));
+    const auto started = std::chrono::steady_clock::now();
+    f.hp.reset();
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(2));
+}
+
+TEST(controller_selecting_another_device_cancels_the_pending_connection)
+{
+    ControllerFixture f({XM4, XM3});
+    CHECK(f.waitForDiscovery());
+    f.fake->blockConnect();
+    f.hp->connectTo(QString::fromStdString(XM4.mac), QString::fromStdString(XM4.name));
+    CHECK(f.fake->waitForConnectAttempt());
+    f.hp->connectTo(QString::fromStdString(XM3.mac), QString::fromStdString(XM3.name));
+    f.fake->releaseConnect();
+    CHECK(spinUntil([&] { return f.hp->connected(); }));
+    CHECK_EQ(f.fake->lastAddress(), XM3.mac);
+    CHECK_EQ(f.hp->deviceName().toStdString(), XM3.name);
+}
+
+TEST(controller_switching_connected_devices_discards_the_old_battery)
+{
+    ControllerFixture f({XM4, XM3});
+    CHECK(f.waitForDiscovery());
+    CHECK(f.connectTo(XM4));
+    f.fake->enqueueData(replies::battery(64));
+    CHECK(spinUntil([&] { return f.hp->batteryLevel() == 64; }));
+    CHECK(f.connectTo(XM3));
+    CHECK_EQ(f.fake->lastAddress(), XM3.mac);
+    CHECK_EQ(f.hp->deviceName().toStdString(), XM3.name);
+    CHECK_EQ(f.hp->batteryLevel(), -1);
+}

@@ -103,6 +103,7 @@ public:
     bool protocolDiscovered() const noexcept { return _protocolDiscovered.load(); }
 
 private:
+	int _writeFrame(Buffer& frame); // Caller holds _sendMtx for the whole frame.
 	void _waitForAck(unsigned long long commandId, unsigned long long session);
 	CommandSerializer::Message _readFrame();
 

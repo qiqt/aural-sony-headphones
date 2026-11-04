@@ -1061,6 +1061,8 @@ void HeadphonesController::connectTo(const QString& mac, const QString& name)
     // A connection the user starts is a first attempt, with its own retry.
     _retryConnect.reset();
     _handshakeRetried = false;
+    if ((_connectFuture.valid() || _bt.isConnected()) && mac.toStdString() != _device.mac)
+        teardownConnection();
     startConnect(mac, name);
 }
 
@@ -1203,11 +1205,11 @@ void HeadphonesController::pump()
                     const bool v2 = identity.protocol == SonyProtocol::V2;
                     m["isV2"] = v2;
                     if (!identity.recognised)
-                        m["badge"] = QStringLiteral("Unrecognised - will try legacy protocol");
+                        m["badge"] = QStringLiteral("Unknown model");
                     else if (!d.connected)
                         m["badge"] = QStringLiteral("Paired, not connected");
                     else
-                        m["badge"] = v2 ? QStringLiteral("V2: discover supported controls") : QStringLiteral("Ready to connect");
+                        m["badge"] = v2 ? QStringLiteral("Connect to check available controls") : QStringLiteral("Ready to connect");
                     (d.connected ? _devices : notConnected).push_back(m);
                 }
                 _devices.append(notConnected);

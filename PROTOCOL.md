@@ -24,7 +24,7 @@ are useful for protocol precision, not a prerequisite to acknowledging that manu
 |---|---|
 | **HW** | Seen on a real WH-1000XM4. Unless noted otherwise this means the protocol traces captured on 2026-10-31 (firmware not recorded); their frames are fixtures in `test_protocol.cpp`, `test_discovery.cpp` and `test_multipoint.cpp`. |
 | **APK** | Recovered statically from Sound Connect 13.3.0 serializers, decoders and callers. No capture. |
-| **GB** | Layout taken from Gadgetbridge's V1 implementation (the source of several existing commands). |
+| **GB** | Byte layouts and value mappings cross-checked against [Gadgetbridge's V1 protocol implementation](https://codeberg.org/Freeyourgadget/Gadgetbridge/src/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/sony/headphones/protocol/impl/v1/SonyProtocolImplV1.java). |
 | **Test** | Covered only by synthetic tests against `FakeBluetoothConnector`. |
 | **Owner** | The owner reports successful manual testing of the existing controls on their XM4 (2026-11-02). Not a packet capture and not validation of later additions. |
 

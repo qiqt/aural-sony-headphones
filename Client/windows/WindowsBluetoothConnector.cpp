@@ -118,9 +118,7 @@ void WindowsBluetoothConnector::connect(const std::string& address, SonyProtocol
     }
     try
     {
-        if (::connect(socket, reinterpret_cast<const sockaddr*>(&destination), sizeof(destination)) == SOCKET_ERROR)
-            throw RecoverableException("Cannot connect to headphones (Windows error " + std::to_string(::WSAGetLastError()) + ")", true);
-        next->connectedSuccessfully();
+        next->connectTo(reinterpret_cast<const sockaddr*>(&destination), sizeof(destination));
     }
     catch (...)
     {

@@ -12,8 +12,7 @@
 //   - DATA frames update Headphones state and are acknowledged back
 //
 // The thread is stopped by closing the socket (BluetoothWrapper::disconnect), which unblocks
-// the pending recv; stop()/the destructor then join it. (PR #103 leaked the thread into a
-// std::async future whose destructor joined an infinite loop and hung connect - we don't.)
+// the pending recv; stop()/the destructor then join it.
 //
 // When the link dies on its own (the headphones powered off, moved out of range, or the
 // socket failed) the reader stops and calls the disconnect handler exactly once. That handler

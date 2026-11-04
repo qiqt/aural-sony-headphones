@@ -46,10 +46,9 @@ namespace CommandSerializer
 	Buffer serializeEqualizerPreset(unsigned char presetCode);
 	Buffer serializeEqualizerCustomBands(int clearBass, const std::vector<int>& bands);
 
-	// v1 sound-quality / system serializers (from Gadgetbridge SonyProtocolImplV1).
+	// V1 sound-quality and system payloads. Protocol references are in PROTOCOL.md.
 	Buffer serializeAudioUpsampling(bool enabled);   // DSEE / DSEE Extreme; send as DATA_MDR
 	Buffer serializeVoiceGuidance(bool enabled);     // voice guidance; send as DATA_MDR_NO2
-	Buffer serializeAutoPowerOff(AUTO_POWER_OFF mode);
 
 	// Auto power-off carries two element IDs: the active one and the selected timer. Both are
 	// written as given; see Headphones::setAutoPowerOff for how the second one is preserved.

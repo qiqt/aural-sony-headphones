@@ -186,3 +186,81 @@ TEST(transport_cancel_during_service_discovery_does_not_open_a_socket)
     CHECK(!f.bt.isConnected());
     CHECK(!f.bt.protocolDiscovered());
 }
+
+TEST(transport_short_writes_complete_commands_and_acknowledgements)
+{
+    EngineFixture f;
+    f.fake().setSendChunkSize(1);
+    f.start();
+    f.hp.requestBattery();
+    CHECK_EQ(f.fake().sentCommands().size(), size_t(1));
+    f.fake().enqueueData(replies::battery(47));
+    CHECK(testing::waitFor([&] { return f.hp.getBatteryLevel() == 47; }));
+    CHECK(testing::waitFor([&] {
+        for (const auto& frame : f.fake().sentFrames())
+            if (frame.dataType == DATA_TYPE::ACK) return true;
+        return false;
+    }));
+}
+
+TEST(transport_zero_progress_after_partial_write_closes_the_link)
+{
+    EngineFixture f;
+    f.fake().setSendChunkSize(1);
+    f.fake().zeroSendAfter(2);
+    f.start();
+    CHECK_THROWS(f.hp.requestBattery(), ConnectionClosedException);
+    CHECK(!f.bt.isConnected());
+    CHECK(f.fake().sentFrames().empty());
+}
+
+TEST(transport_zero_progress_during_ack_closes_the_link)
+{
+    EngineFixture f;
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    f.fake().zeroSendAfter(0);
+    CHECK_THROWS(f.bt.sendAck(0), ConnectionClosedException);
+    CHECK(!f.bt.isConnected());
+}
+
+TEST(transport_discards_noise_and_recovers_at_a_new_start_marker)
+{
+    EngineFixture f;
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    Buffer bytes(MAX_BLUETOOTH_MESSAGE_SIZE * 8, 0x01);
+    bytes.insert(bytes.end(), {START_MARKER, 0x01, 0x02});
+    auto packet = CommandSerializer::packageDataForBt(replies::battery(42), DATA_TYPE::DATA_MDR, 0);
+    bytes.insert(bytes.end(), packet.begin(), packet.end());
+    f.fake().enqueueRaw(bytes);
+    auto frame = f.bt.readMessage();
+    CHECK(frame.messageBytes == replies::battery(42));
+}
+
+TEST(transport_rejects_unterminated_oversized_frames_and_recovers)
+{
+    EngineFixture f;
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    Buffer bytes(MAX_BLUETOOTH_MESSAGE_SIZE, 0x01);
+    bytes.front() = START_MARKER;
+    f.fake().enqueueRaw(bytes);
+    CHECK_THROWS(f.bt.readMessage(), RecoverableException);
+    CHECK(f.bt.isConnected());
+    f.fake().enqueueData(replies::battery(42));
+    CHECK(f.bt.readMessage().messageBytes == replies::battery(42));
+}
+
+TEST(transport_rejects_complete_oversized_frames_and_keeps_next_frame)
+{
+    EngineFixture f;
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    Buffer bytes(MAX_BLUETOOTH_MESSAGE_SIZE - 1, 0x01);
+    bytes.front() = START_MARKER;
+    f.fake().enqueueRaw(bytes);
+    f.fake().setChunkSize(MAX_BLUETOOTH_MESSAGE_SIZE - 1);
+    Buffer tail{0x01, END_MARKER};
+    auto valid = CommandSerializer::packageDataForBt(replies::battery(42), DATA_TYPE::DATA_MDR, 0);
+    tail.insert(tail.end(), valid.begin(), valid.end());
+    f.fake().enqueueRaw(tail);
+    CHECK_THROWS(f.bt.readMessage(), RecoverableException);
+    CHECK(f.bt.readMessage().messageBytes == replies::battery(42));
+}

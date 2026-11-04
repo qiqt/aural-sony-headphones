@@ -309,9 +309,6 @@ TEST(readback_auto_power_off_without_a_report_sends_the_legacy_bytes)
 	f.hp.setChanges();
 	CHECK(wasSent(f.fake(), "F8 04 01 02 02"));
 
-	// The old serializer still produces the bytes it always did.
-	CHECK_EQ(toHex(CommandSerializer::serializeAutoPowerOff(AUTO_POWER_OFF::OFF)), std::string("F8 04 01 11 00"));
-	CHECK_EQ(toHex(CommandSerializer::serializeAutoPowerOff(AUTO_POWER_OFF::AFTER_3_HOUR)), std::string("F8 04 01 03 03"));
 }
 
 TEST(readback_auto_power_off_rejects_unknown_layouts)

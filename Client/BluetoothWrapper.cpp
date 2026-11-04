@@ -60,7 +60,7 @@ int BluetoothWrapper::sendCommand(const std::vector<char>& bytes, DATA_TYPE data
 		std::lock_guard sendGuard(this->_sendMtx);
 		auto data = CommandSerializer::packageDataForBt(bytes, dataType, this->_seqNumber.load());
 		ProtocolTrace::frame("TX", dataType, this->_seqNumber.load(), bytes);
-		bytesSent = this->_connector->send(data.data(), data.size());
+		bytesSent = this->_writeFrame(data);
 	}
 	catch (...)
 	{
@@ -84,7 +84,30 @@ void BluetoothWrapper::sendAck(unsigned char seqNumber)
 	std::lock_guard sendGuard(this->_sendMtx);
 	auto data = CommandSerializer::packageDataForBt({}, DATA_TYPE::ACK, seqNumber ^ 0x01);
 	ProtocolTrace::frame("TX", DATA_TYPE::ACK, seqNumber ^ 0x01, {});
-	this->_connector->send(data.data(), data.size());
+	this->_writeFrame(data);
+}
+
+int BluetoothWrapper::_writeFrame(Buffer& frame)
+{
+	size_t offset = 0;
+	try
+	{
+		while (offset < frame.size())
+		{
+			const auto remaining = frame.size() - offset;
+			const int sent = _connector->send(frame.data() + offset, remaining);
+			if (sent <= 0 || static_cast<size_t>(sent) > remaining)
+				throw ConnectionClosedException("Transport did not complete the frame write");
+			offset += static_cast<size_t>(sent);
+		}
+	}
+	catch (...)
+	{
+		// A partial frame cannot be retried as a new command on the same stream.
+		disconnect();
+		throw;
+	}
+	return static_cast<int>(offset);
 }
 
 void BluetoothWrapper::_waitForAck(unsigned long long commandId, unsigned long long session)
@@ -241,11 +264,25 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 	for (;;)
 	{
 		auto start = std::find(this->_readBuffer.begin(), this->_readBuffer.end(), START_MARKER);
+		// Bytes before a frame cannot become part of a later frame.
+		this->_readBuffer.erase(this->_readBuffer.begin(), start);
+		start = this->_readBuffer.begin();
 		if (start != this->_readBuffer.end())
 		{
 			auto end = std::find(start + 1, this->_readBuffer.end(), END_MARKER);
+			auto restart = std::find(start + 1, end, START_MARKER);
+			if (restart != end)
+			{
+				this->_readBuffer.erase(start, restart);
+				continue;
+			}
 			if (end != this->_readBuffer.end())
 			{
+				if (static_cast<size_t>(end - start + 1) > MAX_BLUETOOTH_MESSAGE_SIZE)
+				{
+					this->_readBuffer.erase(start, end + 1);
+					throw RecoverableException("Received Bluetooth frame is too large");
+				}
 				Buffer frame(start + 1, end);
 				this->_readBuffer.erase(this->_readBuffer.begin(), end + 1);
 				try
@@ -261,6 +298,11 @@ CommandSerializer::Message BluetoothWrapper::_readFrame()
 						ProtocolTrace::line("RX unreadable frame  " + ProtocolTrace::hex(frame) + "  (" + exc.what() + ")");
 					throw;
 				}
+			}
+			if (this->_readBuffer.size() >= MAX_BLUETOOTH_MESSAGE_SIZE)
+			{
+				this->_readBuffer.clear();
+				throw RecoverableException("Received Bluetooth frame has no end marker");
 			}
 		}
 

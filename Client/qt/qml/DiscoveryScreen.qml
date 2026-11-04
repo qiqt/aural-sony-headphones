@@ -17,14 +17,14 @@ Item {
             ColumnLayout {
                 spacing: 4
                 Text {
-                    text: Hp.connecting ? "Connecting..." : "Devices Nearby"
+                    text: Hp.connecting ? "Connecting..." : "Headphones"
                     color: Theme.textPrimary
                     font.family: Theme.displayFont
                     font.pixelSize: Theme.display
                     font.weight: Font.Bold
                 }
                 Text {
-                    text: "Select a headphone to connect."
+                    text: "Connect to headphones paired with Windows."
                     color: Theme.textSecondary
                     font.pixelSize: Theme.bodyLg
                 }
@@ -33,7 +33,7 @@ Item {
             Item { Layout.fillWidth: true }
 
             AuralButton {
-                text: Hp.discovering ? "Scanning..." : "Scan again"
+                text: Hp.discovering ? "Refreshing..." : "Refresh"
                 enabled: !Hp.discovering && !Hp.connecting
                 onClicked: Hp.refreshDevices()
             }
@@ -127,7 +127,7 @@ Item {
         Text {
             visible: Hp.devices.length === 0 && !Hp.discovering
             Layout.fillWidth: true
-            text: "No headphones found. Pair them in Windows Bluetooth settings, then press Scan again."
+            text: "No headphones found. Pair them in Windows Bluetooth settings, then select Refresh."
             color: Theme.textSecondary
             font.pixelSize: Theme.bodyMd
             wrapMode: Text.WordWrap
