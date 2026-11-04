@@ -45,9 +45,8 @@ $env:AURAL_TRACE = "$PWD/build/headset-probe/capture.log"
 ./build/headset-probe/Debug/headset_probe.exe --read '<address from --list>'
 ```
 
-Raw replies to model, firmware, EQ capability and power-off capability requests are retained in
-the trace even when the current engine has no decoder. The final summary is not a substitute
-for checking each expected reply in that trace. A missing reply remains unknown, even if ACKed.
+The trace includes raw model, firmware, EQ and power-off replies, including undecoded
+messages. Check it for missing replies when investigating incomplete results.
 
 ### Qt application
 
@@ -97,13 +96,11 @@ $env:AURAL_DEMO = '1'
 Remove-Item Env:AURAL_DEMO
 ```
 
-Demo mode short-circuits the pump: it exercises the QML and the controller's
-UI state only. It does not test Bluetooth, the command queue or ACK handling.
+Demo mode runs the interface with sample data and no Bluetooth connection.
 
 `AURAL_DEMO_DEVICE` sets the name the demo pretends to be connected to.
 Anything that is not a known product code (e.g. `"Leon's Headphones"`)
-previews the conservative control surface an unrecognised device gets - the
-only way to see that path without hardware.
+shows the controls available for an unrecognised device.
 
 ```powershell
 $env:AURAL_DEMO = "1"; $env:AURAL_DEMO_DEVICE = "Leon's Headphones"
@@ -179,7 +176,7 @@ machine.
 The configure step stamps the git commit, branch and working-tree state into
 the binary. `Aural` prints it at startup, About shows it, and `BUILD-INFO.txt`
 in a staged package carries it. A dirty tree is reported as `modified`, and a
-build with no `.git` reports `unknown` rather than guessing. See
+build with no `.git` reports `unknown`. See
 `packaging/README.md`.
 
 ## Moving the checkout

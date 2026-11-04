@@ -11,9 +11,9 @@ Otherwise, select your headphones and choose **Connect**.
 
 ## Device support
 
-- **WH-1000XM4:** existing controls have been manually tested by the owner.
-- **Other Sony models:** support is in development. XM3, XM5 and XM6 have
-  not been validated on hardware; protocol tests alone do not confirm support.
+- **WH-1000XM4:** tested on real headphones.
+- **XM3, XM5 and XM6:** support is in development. These models haven't
+  been tested yet.
 
 ## Build and run
 

@@ -88,7 +88,7 @@ ScrollView {
                         Binding on currentIndex { value: modelData.selected }
                         onActivated: (i) => Hp.setV2EqPreset(modelData.selector, modelData.presetIds[i])
                     }
-                    Text { Layout.fillWidth: true; text: modelData.bandsEditable ? "Adjust each band below." : modelData.read ? "Current curve received. Band editing is unavailable until its layout is fully described." : "Waiting for the current equalizer setting."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
+                    Text { Layout.fillWidth: true; text: modelData.bandsEditable ? "Adjust each band below." : modelData.read ? "Aural can show this equalizer curve, but can't edit its bands yet." : "Reading the equalizer setting..."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
                     Repeater {
                         model: modelData.bands
                         delegate: RowLayout {
@@ -110,7 +110,7 @@ ScrollView {
                 }
             }
         }
-        Text { Layout.fillWidth: true; text: "Additional controls appear as their protocol variants become supported. Device details and log export are available in System."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
+        Text { Layout.fillWidth: true; text: "Open System for device details and diagnostic logs."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
         Item { Layout.preferredHeight: Theme.xl }
     }
 }

@@ -3,15 +3,8 @@
 #include <QObject>
 #include <QString>
 
-// Which build this is, in the build's own words.
-//
-// A release candidate has to be traceable to the source it came from: a bug report that says
-// "v2.1.0" is not actionable when several builds share that version. The revision is baked in
-// at configure time from git (AURAL_BUILD_REVISION) and shown in About, and the packaging step
-// writes the same string into BUILD-INFO.txt next to the executable.
-//
-// "unknown" is a real answer: a build from a source archive with no .git has nothing honest to
-// report, and inventing something would defeat the point.
+// Version and Git revision captured at configure time, shown in About and BUILD-INFO.txt.
+// Source archives without .git use "unknown" for the revision.
 class BuildInfo : public QObject
 {
     Q_OBJECT

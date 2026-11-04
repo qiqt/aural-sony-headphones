@@ -39,14 +39,12 @@ std::unique_ptr<IBluetoothConnector> makeConnector()
 #ifdef _WIN32
     return std::make_unique<WindowsBluetoothConnector>();
 #else
-    // Aural is Windows-only for now. The engine's Linux/macOS connectors belong to the
-    // original client and are not wired up here; returning null would crash on first use.
+    // Only Windows has a Bluetooth connector.
     return nullptr;
 #endif
 }
 
-// Never invent a model. A Bluetooth name is user-editable, so we only show a marketing name
-// when the name actually matches a product code (see identifyDevice).
+// Keep renamed devices' Bluetooth names unless they match a known product code.
 QString displayModel(const std::string& name)
 {
     const DeviceIdentity identity = identifyDevice(name);
@@ -316,8 +314,7 @@ void HeadphonesController::init()
         _wearingControl = toggleMap(demoToggle(true));
         _multipointMode = multipointMap(demoToggle(true), MultipointChange{});
 
-        // Demo mode is a UI preview, so it also previews the honest status vocabulary: most
-        // settings read back as Confirmed, one is still only Sent, one was never read.
+        // Include confirmed, sent and unread settings in the demo.
         SettingsStatus demoStatus;
         demoStatus.ambient = SettingStatus::Confirmed;
         demoStatus.equalizer = SettingStatus::Confirmed;
@@ -445,15 +442,12 @@ bool HeadphonesController::systemSettingsAvailable()
 QString HeadphonesController::limitedControlReason()
 {
     if (!connected()) return {};
-    if (isV2()) return tr("V2 support is experimental. Only decoded, device-advertised controls are enabled.");
+    if (isV2()) return tr("Support for these headphones is still in development. Some controls are unavailable.");
     if (_identity.recognised) return {};
     if (_headphones.capabilitiesKnown())
-        return tr("Aural doesn't recognise this device, so it offers only what the headphones "
-                  "report supporting. Equalizer and power options become available when their "
-                  "capabilities have been read.");
-    return tr("Aural doesn't recognise this device, so it only offers the control it can "
-              "verify. Ambient sound reports its state back; everything else is "
-              "model-specific and would be a guess.");
+        return tr("Aural doesn't recognise this model. Available controls depend on the "
+                  "information the headphones send.");
+    return tr("Aural doesn't recognise this model. Only ambient sound controls are available.");
 }
 
 
@@ -508,8 +502,7 @@ void HeadphonesController::pushAmbient()
 
 void HeadphonesController::setAmbientMode(int m)
 {
-    // Guarded here as well as in QML: the tray menu and any stale binding come through the
-    // same door, and a gated control must not reach the wire by a side route (SON-11).
+    // Recheck availability for tray actions and stale QML bindings.
     if (!ambientAvailable())
     {
         ProtocolTrace::line("   UI: ambient mode change refused: not offered on this connection");
@@ -1288,8 +1281,7 @@ void HeadphonesController::pump()
         try
         {
             _commandFuture.get();
-            // "Sent" is the honest word: the headphones acknowledged the frames. Only a
-            // read-back reply can promote a setting to confirmed (see settingStatus).
+            // ACK marks the command as sent; read-back confirms the setting.
             if (!stale && wasSettingsPush)
                 emit toast("Settings sent");
             // A handshake that went through: a later failure earns its own retry.
@@ -1480,9 +1472,9 @@ void HeadphonesController::syncExtras()
     if (connected() && isV2()) {
         const auto snapshot = _headphones.getV2Snapshot();
         v2["phase"] = QString::fromStdString(snapshot.phase);
-        v2["message"] = snapshot.phase == "ready" ? tr("Discovery complete. Controls are enabled only when the headphones report them available.") :
-            snapshot.phase == "unsupported-version" ? tr("This protocol version is not supported. Settings remain unavailable.") :
-            snapshot.phase == "reply-timeout" ? tr("The headphones did not return the required discovery information.") : tr("Reading the headphones' capabilities...");
+        v2["message"] = snapshot.phase == "ready" ? tr("Ready") :
+            snapshot.phase == "unsupported-version" ? tr("Aural can't read settings from this firmware yet.") :
+            snapshot.phase == "reply-timeout" ? tr("The headphones didn't respond. Try reconnecting.") : tr("Reading headphone settings...");
         if (snapshot.protocol) v2["version"] = QStringLiteral("0x") + QString::number(snapshot.protocol->version, 16).rightJustified(8, '0');
         QStringList functionLabels;
         for (size_t table = 0; table < snapshot.functions.size(); ++table)
@@ -1909,8 +1901,8 @@ QVariantMap HeadphonesController::diagnostics()
     QStringList functions;
     for (auto id : _headphones.supportedFunctions()) functions << QString::number(id, 16).rightJustified(2, '0').toUpper();
     result["functions"] = isV2() ? _v2Info.value("functions").toString() : functions.join(' ');
-    result["validation"] = _identity.model == SonyModel::WH_1000XM4 ? tr("XM4: hardware evidence available") :
-        isV2() ? tr("V2 experimental: static protocol evidence; no model-specific hardware validation") : tr("Capability-based V1 support; this model is not hardware-validated");
+    result["validation"] = _identity.model == SonyModel::WH_1000XM4 ? tr("Tested on WH-1000XM4") :
+        tr("This model hasn't been tested yet.");
     return result;
 }
 

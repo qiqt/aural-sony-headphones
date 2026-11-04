@@ -279,8 +279,7 @@ ApplicationWindow {
                 }
             }
 
-            // Says out loud why most of the app is missing, rather than leaving the user to
-            // wonder whether it is broken.
+            // Explain missing controls for an unrecognised or experimental device.
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: limitedText.implicitHeight + Theme.lg

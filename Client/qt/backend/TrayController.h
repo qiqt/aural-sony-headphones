@@ -11,13 +11,8 @@ class QWindow;
 class AppSettings;
 class HeadphonesController;
 
-// System tray presence: connection/battery state, the quick controls the design references
-// call for, and show/hide/quit.
-//
-// Every control routes through HeadphonesController - the tray is another view of the same
-// state, never a second source of truth. It also reports honestly: a quick control shows what
-// the app actually knows (sent vs confirmed vs failed), it does not tick a box because the
-// user clicked it.
+// Tray icon, quick controls and window actions. Settings and their status come from
+// HeadphonesController, just as they do in the main window.
 class TrayController : public QObject
 {
     Q_OBJECT

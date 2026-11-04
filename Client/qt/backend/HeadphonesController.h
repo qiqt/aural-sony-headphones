@@ -57,11 +57,8 @@ class HeadphonesController : public QObject
     // arrived this session; until then every answer is Unknown. Whether a given V1 model answers
     // the query at all has not been established on hardware yet (see PROTOCOL.md).
     //
-    // What we do with Unknown depends on whether we recognise the device (SON-11): for a model
-    // this client has code paths for, Unknown means "the device just doesn't answer that query"
-    // and the control is offered. For a device we cannot identify, Unknown means we know
-    // nothing, and offering a model-specific command would be a guess made with the user's
-    // headphones - so it stays hidden. See featureAvailable().
+    // Until capabilities arrive, recognised models use their fallback controls.
+    // Unrecognised models hide model-specific controls. See featureAvailable().
     Q_PROPERTY(bool capabilitiesKnown READ capabilitiesKnown NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsOptimizer READ supportsOptimizer NOTIFY capabilitiesChanged)
     Q_PROPERTY(bool supportsSpeakToChat READ supportsSpeakToChat NOTIFY capabilitiesChanged)

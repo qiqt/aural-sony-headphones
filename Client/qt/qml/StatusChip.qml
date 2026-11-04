@@ -3,11 +3,8 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Aural
 
-// Says what the app actually knows about a setting, in the app's own words.
-//
-// The distinction that matters: "Sent" means the headphones acknowledged the frame.
-// "Confirmed" means they reported the value back. A setting is read back only when the
-// headphones advertise it; otherwise it honestly stops at "Sent".
+// "Sent" means the headphones acknowledged the command.
+// "Confirmed" means they reported the setting's value.
 Rectangle {
     id: chip
 
@@ -39,10 +36,10 @@ Rectangle {
 
     readonly property var explanations: ({
         "unknown": "The headphones have not reported this setting yet.",
-        "requested": "A change is in progress. Wait for the headphones to respond.",
-        "acknowledged": "The headphones received the command, but have not confirmed the setting. It will not be resent automatically.",
+        "requested": "Waiting for the headphones to respond.",
+        "acknowledged": "The headphones received the command but haven't reported the new setting.",
         "confirmed": "The headphones reported the value shown here.",
-        "failed": "The change could not be completed. Check the connection and choose the setting again to retry."
+        "failed": "Couldn't change this setting. Check the connection and try again."
     })
     HoverHandler { id: hover }
     ToolTip.visible: hover.hovered

@@ -761,7 +761,7 @@ TEST(controller_diagnostics_export_and_reset)
     CHECK(f.hp->diagnostics().value("firmware").toString().isEmpty());
 }
 
-// Synthetic profiles exercise capability-driven support, not claims of hardware validation.
+// Scripted device replies for different capability sets.
 TEST(controller_other_v1_models_use_reported_layout_and_options)
 {
     for (const char* name : {"WH-1000XM3", "WF-1000XM3", "My legacy headset"})

@@ -13,8 +13,7 @@
 
 namespace {
 
-// How a setting's status reads in a menu. The tray never claims a value is on the device
-// just because the user picked it.
+// Menu labels for the controller's setting status.
 QString statusSuffix(const QString& status)
 {
     if (status == QLatin1String("requested"))    return QObject::tr(" - sending");
@@ -162,7 +161,7 @@ bool TrayController::eventFilter(QObject* watched, QEvent* event)
         return true;
     }
 
-    // Keep "Show Aural"/"Hide Aural" honest when the window appears or disappears.
+    // Update "Show Aural"/"Hide Aural" when window visibility changes.
     if (watched == _window && (event->type() == QEvent::Show || event->type() == QEvent::Hide))
         refresh();
 

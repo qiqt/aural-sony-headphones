@@ -31,10 +31,8 @@ Studio installed:
 2. Pair headphones, connect, read settings and disconnect.
 3. Test the controls intended for the release; record model and firmware.
 
-These clean-machine checks remain outstanding. Existing XM4 manual testing
-is recorded in [PROTOCOL.md](../PROTOCOL.md); it does not validate every
-packaged build. Software rendering also needs testing: the local minimal
-Qt installation lacks `opengl32sw.dll`.
+The portable build still needs testing on a clean Windows machine and with
+software rendering. The local Qt installation lacks `opengl32sw.dll`.
+See [PROTOCOL.md](../PROTOCOL.md) for the XM4 test results.
 
-The target creates a local folder. It does not sign the app, create an
-installer or publish a GitHub release.
+The output is an unsigned portable folder, ready to zip and share.

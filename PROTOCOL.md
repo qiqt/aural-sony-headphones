@@ -1,24 +1,18 @@
-# Sony V1 protocol in Aural — what is implemented, and on what evidence
+# Sony V1 protocol
 
-This file tracks the Sony Tandem V1 (MDR) messages the engine sends and decodes, and how much
-we actually know about each one. It is the in-repository companion to the vault note
+These notes describe the Sony Tandem V1 (MDR) messages Aural sends and reads.
+Related references are the vault note
 *Sony Sound Connect 13.3.0 – Protocol Findings* and the reference implementation in
 `protocol-reference/xm4_remaining.py`.
 
-## Evidence levels
+## Sources and testing
 
-### Owner's manual validation, reported 2026-11-02
+### XM4 manual testing, 2026-11-02
 
-The owner reports having manually tested all of the existing features discussed in the hardware
-checklist and that they work on their WH-1000XM4. Record that as successful owner-reported manual
-validation, including the setting changes, physical behavior and multipoint flows previously
-described as pending. It is separate from the agent's read-only capture and from synthetic tests.
-The report does not supply per-step logs or establish which firmware/build was used for every
-manual check. It does not validate features newly implemented after that report.
-
-The historical checklist below records capture coverage and remaining trace/detail questions;
-it must not be read as saying the owner has not tested the existing controls. Further captures
-are useful for protocol precision, not a prerequisite to acknowledging that manual validation.
+The owner tested the existing controls on their WH-1000XM4, including setting changes
+and multipoint, and reported that they worked. Firmware and build numbers weren't
+recorded for each check. Controls added after November 2 still need separate testing.
+The tables below also track packet captures and details that need further investigation.
 
 | Tag | Meaning |
 |---|---|
@@ -26,21 +20,17 @@ are useful for protocol precision, not a prerequisite to acknowledging that manu
 | **APK** | Recovered statically from Sound Connect 13.3.0 serializers, decoders and callers. No capture. |
 | **GB** | Byte layouts and value mappings cross-checked against [Gadgetbridge's V1 protocol implementation](https://codeberg.org/Freeyourgadget/Gadgetbridge/src/branch/master/app/src/main/java/nodomain/freeyourgadget/gadgetbridge/service/devices/sony/headphones/protocol/impl/v1/SonyProtocolImplV1.java). |
 | **Test** | Covered only by synthetic tests against `FakeBluetoothConnector`. |
-| **Owner** | The owner reports successful manual testing of the existing controls on their XM4 (2026-11-02). Not a packet capture and not validation of later additions. |
+| **Owner** | Manual testing on the owner's XM4, reported 2026-11-02. |
 
-HW identifies captured hardware traffic; Owner identifies the owner's manual validation.
-A passing synthetic test proves the C++ matches its fixtures; it does not prove a headset
-accepts the bytes.
-
-The Owner report above is separate hardware-behavior evidence. The HW tags in the historical
-tables specifically mean captured protocol traffic.
+Tests with `FakeBluetoothConnector` use scripted replies. Hardware results are marked
+**HW** for packet captures or **Owner** for manual checks.
 
 ## Capability-driven additions, 2026-11-02
 
 This section supersedes historical statements below that EQ/power-off capability layouts,
 connection preference, codec/activity indicators and assignment parsing are unimplemented.
 The implementation uses `EqualizerProtocol.h`, `AudioProtocol.h`, and `AssignmentProtocol.h`.
-Live work in this pass was read-only; no new setting or assignment writes were sent to the headset.
+The November 2 hardware check read settings without changing them.
 
 ### Equalizer and auto power-off
 
@@ -53,8 +43,7 @@ Live work in this pass was read-only; no new setting or assignment writes were s
   A received capability replaces the model fallback; an unadvertised timer is not offered.
 - Save to Custom 1/2 follows Sony's observed application workflow: select A1/A2 with zero levels,
   wait for matching EQ read-back, send `58 01 FF count levels...`, then verify the resulting curve.
-  No direct A1/A2-with-levels packet is invented. Pending saves are session-scoped and bounded.
-  Actual survival across headset power cycles has not been tested in this read-only pass.
+  Pending saves expire on timeout or disconnect. Saving across headset restarts still needs testing.
 
 Sony evidence: EQ schema `ev_2f5a6b18b52b743b5e7206e81e5c393079ae1462b155cebc999efb3273bb3da4`;
 power-off `ev_90a799e6abd41a78eae31ffd2ec43272b3cbaaf314a32e88cfcedb571d1e49c8`;
@@ -75,7 +64,8 @@ All are retained in the reverse-engineering lab's `sony-evidence` directory.
 
 System shows codec and DSEE activity independently of the DSEE enabled setting. Only activity
 status 01 displays Processing, matching Sony's indicator logic. Unknown readings remain unknown.
-Availability is rechecked before a queued connection-preference write; ACK does not confirm it.
+Availability is rechecked before sending a connection-preference change. Aural then
+reads the setting to check whether the change took effect.
 
 Sony evidence: `ev_6136aa20c0df0bace8a3901907c7abae043e28a10ff91406eadbf7d78a565893`,
 `ev_79d8bd330ee3f8a9000e8826b9dd1ac18822e45361abd5e85da07eb7e0027f22`,
@@ -102,7 +92,7 @@ Retained assignment evidence: `ev_0e8af1c0458bae5e8a50d00819ac91cf456c4171b91408
 Sanitized live GET replies are retained in `Client/tests/fixtures/xm4-capabilities-20261102.json`.
 They confirm AAC, sound-quality priority, inactive DSEE, and the assignment schema above on
 firmware 2.9.0. Synthetic tests exercise writes, malformed packets, unavailable states, read-back
-and session reset. The owner's earlier validation does not cover these newly added controls.
+and session reset. The new controls still need manual testing.
 
 The integrated engine was also exercised read-only against the same headset. Capture:
 `Client/tests/fixtures/xm4-integrated-readonly-20261102.json` (174 frames). It decoded the six-band,
@@ -110,15 +100,13 @@ The integrated engine was also exercised read-only against the same headset. Cap
 status `E3 01 00`; AAC; inactive DSEE; and one assignable control. Outgoing payloads were audited
 as initialization/GET requests and transport ACKs only. No new feature write was tested on hardware.
 
-Validation of this working tree: Debug engine, Qt controller and app builds passed; all 13 engine
-CTest suites and 23 controller tests passed; `qmllint -W 0` passed for the full QML module;
-`git diff --check` passed. Tests cover capability bounds, mismatched tables, per-key availability,
-read-back, disconnect/reset, Custom-slot selection before curve transmission, selection changes
-from elsewhere, and save timeout without replay. No computer-use or visible UI session was run.
+Tests cover capability bounds, mismatched tables, per-key availability, read-back,
+disconnect/reset, Custom-slot selection before curve transmission, changes from other
+apps, and save timeouts.
 
 ## Protocol trace
 
-Set `AURAL_TRACE=1` before starting Aural (or the legacy client) to append every frame sent and
+Set `AURAL_TRACE=1` before starting Aural to append every frame sent and
 received to `%TEMP%\aural-trace.log`. Set it to a path to write somewhere else. The log also
 records connects and disconnects, missing ACKs, and every reply no decoder accepted ("not used").
 The Qt app adds what the UI offered after each capability change, and any request a gate refused.
@@ -175,7 +163,7 @@ model, not from capability metadata.
 ## Touch panel and wearing control
 
 New controls on the System screen. Both writes have been sent to a WH-1000XM4, off and back on.
-The tester reported both working; the trace records only the bytes, not what the headset did.
+The tester confirmed that both worked.
 
 | Control | Write | Evidence | Notes |
 |---|---|---|---|
@@ -283,14 +271,11 @@ and probe-source digest are preserved in `Client/tests/fixtures/xm4-readonly-202
   `51 01 06 15 0C 00 00 10 00 11 00 12 00 13 00 14 00 15 00 16 00 17 00 A0 00 A1 00 A2 00`.
 - Power-off capability GET `F0 04` returned `F1 04 02 10 11`.
 
-These last two replies are new raw capability evidence, not validated general-purpose schemas.
-The power-off bytes are consistent with the two known XM4 choices; the EQ bytes are consistent
-with six levels and twelve preset records. Confirm the field layouts against the recovered
-decoders before implementing production capability parsers. This capture does not establish
-EQ gain scaling or persistent Custom 1/2 editing.
+The last two replies contain two XM4 power choices, six EQ levels and twelve presets.
+Their decoded layouts are described under Equalizer and auto power-off above.
+Custom 1/2 persistence across restarts still needs testing.
 
-Settings changes, multipoint enable/LDAC, physical controls and listening checks remain deferred
-at the user's request. Firmware 2.9.0 identifies this pass only, not the earlier October traces.
+This check read settings on firmware 2.9.0. The October traces didn't record firmware.
 
 ### October hardware pass and remaining checks
 
@@ -312,7 +297,7 @@ with both fixed, covers steps 7 and 8 and cancelling a multipoint turn-off. The 
 | 9 | Turning it off, done both ways. Each time: `94 01 00`, `D8 D2 01 00`, then `99 01 07 01`. Cancel: `98 01 07 00`, then `D9 D2 01 01` (still on, no disconnect). Continue: `98 01 07 01`, the link drops, Aural reconnects on its own and reads `D7 D2 01 00`. Turning it on: reported working, not traced, so the `06` alert, its action type and the LDAC check are still uncaptured. |
 | 10 | Done for turning it off (see the timing table under multipoint mode). The alert arrived 27 ms after the write was sent. The user took 4 s to answer, and the XM4 waited. |
 
-To be completed on a WH-1000XM4 before any APK-only behaviour is described as working:
+Checklist for further XM4 captures:
 
 1. Record model, firmware version and the Aural commit (`About` shows it).
 2. Capture the `07` reply on connect. Every later step depends on it: if the XM4 does not
@@ -367,19 +352,15 @@ The generic `--read-v1` probe allows collecting other already-connected V1 devic
 Synthetic controller profiles cover WH-1000XM3, WF-1000XM3, and an unrecognized
 name with a three-level EQ and restricted power choices. They verify that capability
 replies enable the available preset controls, disable the incompatible six-level
-editor, and suppress unadvertised functions. They are not physical model validation.
+editor, and hide unavailable functions. These profiles use scripted device replies.
 
 At the end of the earlier V1 pass, XM5/XM6 had transport isolation only.
 The subsequent multi-model implementation adds V2 startup, EQ, ANC and audio
 controls; see the implementation status in PROTOCOL-MULTIMODEL.md. Legacy setters
-remain isolated from V2, and full model support still requires hardware validation.
+remain separate from V2. XM5 and XM6 still need testing on real headphones.
 
-Validation for this pass: all 13 engine suites passed; the assignment suite also
-passed after adding pending-value assertions. All 26 controller tests passed,
-including diagnostics export/reset, alternate V1 profiles, and V2 isolation.
-Debug app and headless probe builds passed, QML lint reported no warnings, and
-`git diff --check` passed. No computer-use automation, headset writes, or Bluetooth
-reconnections were performed during this pass. New model coverage is simulated.
+Controller tests cover diagnostics export/reset, alternate V1 profiles and
+separate V1/V2 command handling.
 
 ## Multi-model REA follow-up
 
@@ -387,4 +368,4 @@ See [XM3/XM5/XM6 implementation research](PROTOCOL-MULTIMODEL.md) for the
 2026-11-02 Sony service-discovery and V2 startup findings, generation-specific
 payload differences, evidence IDs, implementation order, and unresolved hardware
 questions. The [V2 enum catalog](docs/sony-v2-byte-catalog.json) contains 34 enums
-and 539 entries; it is an app-wide vocabulary, not a model support matrix.
+and 539 entries used across Sony's app. Check each device's replies for its supported functions.

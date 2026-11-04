@@ -46,7 +46,7 @@ Item {
                     visible: Hp.connected && !Hp.isV2 && !Hp.dseeAvailable && !Hp.voiceGuidanceAvailable
                     text: Hp.capabilitiesKnown
                           ? "These headphones did not report DSEE or voice guidance."
-                          : "Not offered for an unrecognised device until it reports supporting them."
+                          : "Waiting for DSEE and voice guidance information from the headphones."
                     color: Theme.textSecondary
                     font.pixelSize: Theme.labelSm
                     wrapMode: Text.WordWrap
@@ -86,10 +86,8 @@ Item {
             }
         }
 
-        // Controls the headphones describe themselves. The card appears once the device has
-        // described one of them; until then there is nothing honest to show. Bound to the data,
-        // not to the rows' visible: a hidden card makes its rows read as hidden too, so it could
-        // never come back.
+        // Bind to device data: child rows inherit the card's visibility, so using their
+        // visible properties here would prevent a hidden card from reappearing.
         Rectangle {
             Layout.fillWidth: true
             visible: Hp.touchPanel.phase !== "absent" || Hp.wearingControl.phase !== "absent"
@@ -139,7 +137,7 @@ Item {
                 Text { text: "DSEE activity: " + (Hp.audioInfo.dseeActivity || "Not reported"); color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
                 Text {
                     Layout.fillWidth: true
-                    text: "Activity reports whether DSEE is processing now. The DSEE switch above controls whether it is enabled. Changing connection preference can interrupt audio."
+                    text: "DSEE may be idle even when switched on. Changing connection preference can briefly interrupt audio."
                     wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm
                 }
                 AuralCombo {

@@ -1,31 +1,27 @@
 # XM3, XM5 and XM6 implementation research
 
-Research date: 2026-11-02. Scope: how to extend Aural alongside the existing XM4 path.
-This is a research/design report, not a claim of newly implemented model support.
+Research from 2026-11-02 on adding XM3, XM5 and XM6 support.
+These models still need testing on real headphones.
 
-## Evidence boundary
+## Sources
 
-REA inspected the existing Sony Sound Connect 13.3.0 disassembly in the isolated
-REA-Linux VM through the configured pinned SSH MCP connection. Analyst Python read
-smali; the Android app was not executed. No headphone commands, Bluetooth reconnects,
-computer-use automation, package installation or network-isolation changes occurred.
+The research used the Sony Sound Connect 13.3.0 disassembly in the REA-Linux VM.
+Python scripts read the smali files; the Android app wasn't run.
 
 Input APKS SHA-256: `7901e52cf38c5ebd0d5be760e2b105df7ed7ab85c8e732dd4481c910f8fda31e`.
 VM root: `/home/joe/analysis/sony-13.3.0/smali/classes4` unless otherwise stated.
-The package's filename/version label is not independent signature authentication.
-Existing XM4 captures do not validate XM3, XM5 or XM6 behavior.
+The package signature hasn't been checked.
 
 Raw evidence and readable extracts are under
 `C:/Users/User/Documents/ChatGPT/Reverse Engineer/sony-evidence` and its parent.
-Evidence IDs below identify REA records; source classes describe static code,
-not observed headset execution.
+Evidence IDs below link findings to the disassembled classes.
 
-## Main conclusion
+## Protocol selection
 
 Use one app and shared device state with separate V1 and V2 protocol adapters.
 Treat WH-1000XM3 as an extension of the existing legacy implementation, and XM5/XM6
-as candidates for the V2 adapter. Crucially, select the adapter from the device's
-advertised service and validated handshake, not from those model-name assumptions.
+as candidates for the V2 adapter. Select the adapter using the device's
+advertised service and handshake.
 Model-specific feature sets must come from the connected device's capabilities.
 
 Sony itself performs service discovery. `ep0/a.a` reads `BluetoothDevice.getUuids`;
@@ -37,9 +33,9 @@ and byte-reversed UUIDs as an Android workaround. The services are:
 
 Evidence: `ev_d3aee2de7c05d09c9c1604efb3fffab02156b35c64f82d3bf60e69a247f15fbd`,
 `ev_6f62f3398e73d93fe72f2d265d40b8612a34fc66860b316c9062c0ab1135e1f6`.
-This proves the app's selection algorithm, not the services actually advertised
-by every firmware version of each named model. Do not copy the reversed-UUID
-Android workaround to Windows unless Windows evidence requires it.
+Check the advertised services on each model and firmware. The reversed-UUID
+workaround is Android-specific; Windows testing would need to show the same issue
+before adding it here.
 
 ## What should remain shared
 
@@ -64,8 +60,7 @@ Evidence: `ev_71d3b39876891ad0abe213fbb424f18978dc27f2c290e3880baf2fd74ff0e39d`.
 
 ## V1/XM3 work
 
-Much of the code is already reusable. The next substantive gap is full ANC/ambient
-capability handling rather than adding another model-name branch.
+Most of the V1 code can be reused. ANC/ambient capability handling needs extending.
 
 `tm0/d2$c` parses the combined V1 capability as:
 
@@ -90,15 +85,14 @@ Implementation consequences:
 4. Continue using advertised EQ presets/ranges, power choices and button ordering.
 5. Keep absent functions absent. Recognition of an XM3 name must not implicitly
    grant XM4's multipoint, wearing, touch or Speak-to-Chat controls.
-6. Add real XM3 model/firmware fixtures before claiming hardware support. Existing
-   synthetic profiles test the software's gates, not a physical XM3.
+6. Capture replies from a real XM3 and add them to the tests. Current XM3 tests
+   use scripted replies.
 
 Relevant current source: `Client/CommandSerializer.cpp` has the fixed
 `MAX_STEPS_WH_1000_XM3 = 19` and derives NC dual/single mode from ambient level;
 `Client/Headphones.cpp` retains the full NC report but still uses legacy setting
 construction; `HeadphonesController::featureAvailable` allows recognized-model
-fallback when supported functions are unknown. These are extension points,
-not evidence that the owner's already-tested XM4 behavior is broken.
+fallback when supported functions are unknown. These are the areas to extend.
 
 ## Recovered V2 startup
 
@@ -119,15 +113,13 @@ Evidence: `ev_e0d9cb91ca49fda390b7870a9cff94d93d4f30a553164df96d463191635cf090`,
 `ev_f1b60d4cdf4cd9e5f4f6ef6e61063867959e7c92f756d34c25a1d29ddf56f2e5`,
 `ev_28c610e4bf765ab3507862b0f8c6a38f1cd8faf6d24bdccb2fb0aba82d776301`.
 
-This is enough to design startup parsing and synthetic fixtures. The full version
-compatibility policy, capability-info payload, and all failure branches must still
-be ported/tested before describing the handshake as fully implemented.
+The version checks, capability-info payload and error handling also need implementation
+and tests.
 
 ## Concrete V2 incompatibilities
 
 The recovered command/selector catalog and serializers show why V1 packets must
-not be sent through the V2 service. These are app-wide formats, not a list of
-features guaranteed to exist on either XM5 or XM6.
+not be sent through the V2 service. Available features vary by model and firmware.
 
 | Area | Existing V1 path | Recovered V2 path |
 | --- | --- | --- |
@@ -152,7 +144,7 @@ and `ev_9af771f6438111123c5c1e618c41b562f40233e8514eb9cd965f3fe5779eb2e6`.
 Supported-function parsing/order evidence: `ev_b113c5d4a11de240f973a35ba71f0212597a72810262f8523d7a69dc4554002c`
 and `ev_162ecfb94771223308d93862ab7b76ad47607471712c5ba9c36f86b2ddac11fe`.
 Sony's separate `fromEqBandInformationTableSet1/2` adapters into common EQ domain
-types provide a concrete precedent for this design (`ev_5e36898197216b8a13afbc1dc95ad3a794ff243f0e62d1f21225d549047c11aa`).
+types use the same approach (`ev_5e36898197216b8a13afbc1dc95ad3a794ff243f0e62d1f21225d549047c11aa`).
 
 A V2 custom-EQ capability has a compact fixed layout distinct from preset EQ.
 The current six-level editor and the V1 Custom 1/2 save sequence cannot be assumed
@@ -161,7 +153,7 @@ UI semantics before interpreting its bands or claiming persistent saves.
 
 ## Architecture and implementation order
 
-Suggested interfaces (design proposal, not recovered Sony class names):
+Proposed structure:
 
 ```text
 Bluetooth service discovery -> negotiated generation
@@ -192,7 +184,7 @@ Recommended sequence:
 4. Implement V2 battery, ANC/ambient, EQ and their notifications/read-back first.
 5. Add connection preference, DSEE, voice guidance, power, touch/wearing and
    assignments only for advertised variants. Implement multipoint alerts and
-   reconnect verification as a separate state-machine milestone.
+   checking settings after reconnect as a separate step.
 6. Generalize EQ UI from fixed five frequency labels plus Clear Bass to a capability
    descriptor. Preserve the existing editor when its layout matches; leave unknown
    layouts read-only until frequency/order/range meaning is established.
@@ -200,9 +192,8 @@ Recommended sequence:
    delayed notifications, writes followed by read-back, disconnects and reconnects.
    Custom-slot persistence requires a separate authorized persistence test.
 
-Research stops short of device writes. The first runnable implementation milestone
-should be service discovery plus a read-only V2 snapshot, not enabling all controls
-by removing the current V2 guard.
+Start with service discovery and reading V2 settings, then add controls as their
+message formats are implemented.
 
 ## Research checklist and remaining gaps
 
@@ -213,23 +204,19 @@ by removing the current V2 guard.
 | What is the V2 startup sequence? | Recovered main sequence and protocol reply layout; complete compatibility/error policy remains to port |
 | What prevents direct V1 command reuse? | Answered with function-record, EQ, ANC, power and system examples |
 | What should change for broader V1/XM3 support? | Capability-driven ANC/ambient plus existing per-feature gates; actual XM3 capture remains absent |
-| Which features/layouts does each XM5/XM6 firmware expose? | Unresolved without device-specific evidence; catalog and ten-band class existence are not proof |
+| Which features/layouts does each XM5/XM6 firmware expose? | Needs captures from each model and firmware |
 | Are V2 multipoint alerts, touch slots and wearing control fully decoded? | Partial: families and distinctions found; complete semantics/state machines remain open |
 | Is custom EQ persistent across restart? | Not established for these models |
 
-The research pass itself changed no application code. The subsequent implementation
-below is uncommitted and has been exercised with synthetic device replies only.
-
 ## Implementation status (2026-11-02)
 
-Implemented in the current working tree:
+Implemented:
 
 - Windows cached enabled-service discovery selects V2 before V1 and records whether
   service discovery or the model-name fallback selected the protocol. This uses
   BluetoothEnumerateInstalledServices, not a complete live SDP inventory.
 - V1 ANC capability parsing validates type and ambient ranges, including optional
-  voice support. Unknown NC type semantics are gated. XM4 regressions remain;
-  synthetic XM3 profiles do not establish physical XM3 compatibility.
+  voice support. Unrecognised NC types disable the control. XM3 tests use scripted replies.
 - Separate V2 dispatch/startup with the recovered protocol-version allowlist,
   capability identity, model/firmware, table-scoped functions and battery.
   Malformed/unsupported startup cannot fall back to V1 writes.
@@ -237,7 +224,7 @@ Implemented in the current working tree:
   device's band count, ordering, frequency labels and step range. Unknown metadata
   and even step-count encodings remain read-only. Ten-band coverage is synthetic.
 - ANC/ambient variants 13/14/16/17/19, capability ranges, availability and read-back.
-  Extended mode fields are preserved; adjustment-in-progress does not confirm SET.
+  Extended mode fields are preserved. Aural waits for the final setting after adjustment.
 - AUDIO connection preference 00 and DSEE auto/off 01, availability and read-back;
   COMMON codec and DSEE effect indicators are kept separate from configured mode.
   Selector00 has no capability-query subtype; its function declares its choices.
@@ -245,10 +232,9 @@ Implemented in the current working tree:
   probe mode. All writes recheck capability/availability at send time. ACK and
   device-confirmed state remain distinct.
 
-Still outside this milestone: V2 voice guidance, power, touch/wearing, assignments,
+Still to implement: V2 voice guidance, power, touch/wearing, assignments,
 multipoint alerts/reconnect state machine, custom-slot persistence, SHOT/LARGE_DATA
-support and physical XM3/XM5/XM6 validation. Existing V1 features remain on V1.
-No model is declared fully supported from the static app catalog alone.
+support. XM3, XM5 and XM6 also need hardware testing.
 
 Additional audio evidence is retained in the REA lab's task-v2audio-findings.md:
 `ev_eebb2a4f6691c5e24061e963dedeaaa46fe6dead305881c03a9144d5e20578ba`
@@ -257,8 +243,5 @@ Additional audio evidence is retained in the REA lab's task-v2audio-findings.md:
 (availability/state initialization and capability validation).
 
 
-Validation: all 18 engine CTest suites passed (the new audio suite passed after
-correcting its test-name filter); all 28 headless controller tests passed. Debug
-app and probe builds, QML lint and git diff --check passed. No UI automation,
-headphone writes or Bluetooth reconnects were used for this implementation pass.
-Physical XM3/XM5/XM6 behavior remains untested.
+The implementation has automated tests for startup, decoding, settings and error
+handling. XM3, XM5 and XM6 hardware testing is still pending.
