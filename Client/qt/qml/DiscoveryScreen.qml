@@ -69,14 +69,17 @@ Item {
                 model: Hp.devices
                 delegate: Rectangle {
                     width: 240
-                    height: 188
+                    height: deviceContent.implicitHeight + 2 * Theme.md
                     radius: Theme.radiusLg
                     color: Theme.surfaceContainer
                     border.color: Theme.outlineVariant
                     border.width: 1
 
                     ColumnLayout {
-                        anchors.fill: parent
+                        id: deviceContent
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
                         anchors.margins: Theme.md
                         spacing: Theme.sm
 
@@ -89,28 +92,30 @@ Item {
                         }
 
                         Text {
+                            Layout.fillWidth: true
                             text: modelData.model
+                            wrapMode: Text.WordWrap
                             color: Theme.textPrimary
                             font.pixelSize: Theme.bodyLg
                             font.weight: Font.DemiBold
                         }
-                        Row {
+                        RowLayout {
+                            Layout.fillWidth: true
                             spacing: 6
                             Rectangle {
-                                width: 8; height: 8; radius: 4
-                                anchors.verticalCenter: parent.verticalCenter
+                                Layout.preferredWidth: 8; Layout.preferredHeight: 8; radius: 4
+                                Layout.alignment: Qt.AlignVCenter
                                 color: modelData.connected === false ? Theme.outline
                                      : modelData.isV2 ? Theme.error : Theme.success
                             }
                             Text {
-                                anchors.verticalCenter: parent.verticalCenter
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: modelData.badge
                                 color: Theme.textSecondary
                                 font.pixelSize: Theme.labelMd
                             }
                         }
-
-                        Item { Layout.fillHeight: true }
 
                         AuralButton {
                             Layout.fillWidth: true
