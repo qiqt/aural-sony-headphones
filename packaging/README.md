@@ -42,8 +42,9 @@ Studio installed:
 2. Pair headphones, connect, read settings and disconnect.
 3. Test the controls intended for the release; record model and firmware.
 
-The portable build still needs testing on a clean Windows machine and with
-software rendering. The local Qt installation lacks `opengl32sw.dll`.
+The portable build passed a startup check on a Windows 11 VM without Qt or
+Visual Studio installed, using the Qt Quick software backend. Interactive
+layout and Bluetooth checks on that VM are still pending.
 See [PROTOCOL.md](../PROTOCOL.md) for the XM4 test results.
 
 The output is an unsigned portable folder, ready to zip and share.
