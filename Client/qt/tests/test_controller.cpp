@@ -67,12 +67,12 @@ struct ControllerFixture
 	FakeBluetoothConnector* fake;
 	std::unique_ptr<HeadphonesController> hp;
 
-	explicit ControllerFixture(std::vector<BluetoothDevice> devices = { XM4 })
+	explicit ControllerFixture(std::vector<BluetoothDevice> devices = { XM4 }, bool autoConnectOnStartup = false)
 		: fake(new FakeBluetoothConnector())
 	{
 		fake->setDiscoveredDevices(std::move(devices));
 		hp = std::make_unique<HeadphonesController>(
-			std::unique_ptr<IBluetoothConnector>(fake), nullptr);
+			std::unique_ptr<IBluetoothConnector>(fake), nullptr, autoConnectOnStartup);
 	}
 
 	// Discovery is started by the constructor; wait for it to land before touching devices().
@@ -910,4 +910,49 @@ TEST(controller_switching_connected_devices_discards_the_old_battery)
     CHECK_EQ(f.fake->lastAddress(), XM3.mac);
     CHECK_EQ(f.hp->deviceName().toStdString(), XM3.name);
     CHECK_EQ(f.hp->batteryLevel(), -1);
+}
+
+TEST(controller_startup_connects_the_only_connected_headphones)
+{
+    ControllerFixture f({XM4, BluetoothDevice{"Other speaker", "11:22:33:44:55:66", true}}, true);
+    CHECK(spinUntil([&] { return f.hp->connected(); }));
+    CHECK_EQ(f.fake->lastAddress(), XM4.mac);
+    CHECK_EQ(f.fake->connectCount(), 1);
+}
+
+TEST(controller_startup_leaves_multiple_connected_headphones_for_selection)
+{
+    ControllerFixture f({XM4, XM3}, true);
+    CHECK(f.waitForDiscovery());
+    CHECK(!f.hp->connected());
+    CHECK(!f.hp->connecting());
+    CHECK_EQ(f.fake->connectCount(), 0);
+}
+
+TEST(controller_startup_does_not_connect_paired_but_offline_headphones)
+{
+    ControllerFixture f({BluetoothDevice{XM4.name, XM4.mac, false}}, true);
+    CHECK(f.waitForDiscovery());
+    CHECK(!f.hp->connected());
+    CHECK_EQ(f.fake->connectCount(), 0);
+}
+
+TEST(controller_startup_connection_does_not_override_manual_disconnect)
+{
+    ControllerFixture f({XM4}, true);
+    CHECK(spinUntil([&] { return f.hp->connected(); }));
+    f.hp->disconnectDevice();
+    spinFor(std::chrono::milliseconds(250));
+    CHECK(!f.hp->connected());
+    CHECK(!f.hp->connecting());
+    CHECK_EQ(f.fake->connectCount(), 1);
+}
+
+TEST(controller_disconnect_before_initial_discovery_prevents_startup_connection)
+{
+    ControllerFixture f({XM4}, true);
+    f.hp->disconnectDevice();
+    spinFor(std::chrono::milliseconds(250));
+    CHECK(!f.hp->connected());
+    CHECK_EQ(f.fake->connectCount(), 0);
 }

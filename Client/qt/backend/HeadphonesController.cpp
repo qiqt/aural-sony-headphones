@@ -262,11 +262,12 @@ HeadphonesController::HeadphonesController(QObject* parent)
 }
 
 HeadphonesController::HeadphonesController(std::unique_ptr<IBluetoothConnector> connector,
-                                           QObject* parent)
+                                           QObject* parent, bool autoConnectOnStartup)
     : QObject(parent)
     , _bt(std::move(connector))
     , _headphones(_bt)
 {
+    _autoConnectPending = autoConnectOnStartup;
     init();
 }
 
@@ -1052,6 +1053,7 @@ void HeadphonesController::refreshDevices()
 
 void HeadphonesController::connectTo(const QString& mac, const QString& name)
 {
+    _autoConnectPending = false;
     // The user picked other headphones: there is nothing left to check on the old ones.
     if (_mpReconnect && mac.toStdString() != _mpReconnect->device.mac)
     {
@@ -1114,6 +1116,7 @@ void HeadphonesController::startConnect(const QString& mac, const QString& name)
 
 void HeadphonesController::disconnectDevice()
 {
+    _autoConnectPending = false;
     // The user's disconnect also ends any reconnecting Aural was doing on its own.
     if (_mpReconnect)
     {
@@ -1182,6 +1185,7 @@ void HeadphonesController::pump()
     if (_devicesFuture.ready())
     {
         const bool stale = (_devicesSession != _session);
+        std::optional<BluetoothDevice> startupDevice;
         try
         {
             auto found = _devicesFuture.get();
@@ -1189,9 +1193,12 @@ void HeadphonesController::pump()
             {
                 _devices.clear();
                 QVariantList notConnected;
+                std::vector<BluetoothDevice> connectedHeadphones;
                 for (const auto& d : found)
                 {
                     const DeviceIdentity identity = identifyDevice(d.name);
+                    if (d.connected && identity.recognised)
+                        connectedHeadphones.push_back(d);
                     // Paired but not connected: only headphones Aural knows. Every other paired
                     // device (mice, phones, old speakers) would only bury them.
                     if (!d.connected && !identity.recognised)
@@ -1213,12 +1220,20 @@ void HeadphonesController::pump()
                     (d.connected ? _devices : notConnected).push_back(m);
                 }
                 _devices.append(notConnected);
+                if (_autoConnectPending)
+                {
+                    _autoConnectPending = false;
+                    if (connectedHeadphones.size() == 1 && !_bt.isConnected() && !_connectFuture.valid())
+                        startupDevice = connectedHeadphones.front();
+                }
                 emit devicesChanged();
             }
         }
         catch (const RecoverableException& exc) { if (!stale) emit errorOccurred(exc.what()); }
         catch (const std::exception& exc) { if (!stale) emit errorOccurred(exc.what()); }
         if (!stale && !_bt.isConnected()) setConn(Conn::Disconnected);
+        if (startupDevice && _devicesSession == _session && !_connectFuture.valid() && !_bt.isConnected())
+            startConnect(QString::fromStdString(startupDevice->mac), QString::fromStdString(startupDevice->name));
     }
 
     // --- Connect future ---

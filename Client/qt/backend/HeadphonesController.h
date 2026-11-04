@@ -171,11 +171,9 @@ class HeadphonesController : public QObject
 
 public:
     explicit HeadphonesController(QObject* parent = nullptr);
-    // Test seam: run the whole controller - sessions, futures, teardown - against a scripted
-    // transport instead of the platform one. The only difference from the constructor above
-    // is where the connector comes from.
+    // Inject a transport; tests can disable startup connection for manual-flow cases.
     explicit HeadphonesController(std::unique_ptr<IBluetoothConnector> connector,
-                                  QObject* parent);
+                                  QObject* parent, bool autoConnectOnStartup = true);
     ~HeadphonesController() override;
 
     QVariantMap diagnostics();
@@ -392,6 +390,7 @@ private:
     DeviceIdentity _identity;
     SonyProtocol _protocol = SonyProtocol::V1;
     QVariantList _devices;
+    bool _autoConnectPending = true;
     bool _syncing = false;
     bool _connectionInitialized = false;
     bool _wantBattery = false;

@@ -5,7 +5,9 @@ sound, equalizer, Speak-to-Chat, multipoint connections and device settings.
 Available controls depend on the connected headphones.
 
 Aural is a Windows desktop app built with C++ and Qt Quick. Pair your
-headphones in Windows Bluetooth settings, open Aural and select **Connect**.
+headphones in Windows Bluetooth settings. On startup, Aural connects
+automatically when one recognized headset is already connected to Windows.
+Otherwise, select your headphones and choose **Connect**.
 
 ## Device support
 
