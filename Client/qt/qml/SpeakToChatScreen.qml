@@ -36,7 +36,7 @@ Item {
                 }
                 ColumnLayout { spacing: 2
                     Text { text: "Speak-to-Chat"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold; font.family: Theme.displayFont }
-                    Text { text: "Enable hands-free conversation"; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+                    Text { text: "Pause audio when you speak"; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
                 }
                 Item { Layout.fillWidth: true }
                 PillSwitch { checked: Hp.s2cEnabled; onToggled: (on) => Hp.s2cEnabled = on }
@@ -89,8 +89,8 @@ Item {
                 id: vpRow
                 anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.md
                 ColumnLayout { spacing: 2
-                    Text { text: "Voice Passthrough Focus"; color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
-                    Text { Layout.fillWidth: true; text: "Suppress background noise and enhance voices while Speak-to-Chat is active."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
+                    Text { text: "Focus on voices"; color: Theme.textPrimary; font.pixelSize: Theme.labelLg; font.weight: Font.DemiBold }
+                    Text { Layout.fillWidth: true; text: "Reduce background noise while Speak-to-Chat is active."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
                 }
                 Item { Layout.fillWidth: true }
                 PillSwitch { checked: Hp.s2cVoice; onToggled: (on) => Hp.s2cVoice = on }

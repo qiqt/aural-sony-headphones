@@ -20,7 +20,6 @@ Item {
         ColumnLayout {
             spacing: 4
             Text { text: "Dashboard"; color: Theme.textPrimary; font.family: Theme.displayFont; font.pixelSize: Theme.display; font.weight: Font.Bold }
-            Text { text: "Overview and quick controls for your connected device."; color: Theme.textSecondary; font.pixelSize: Theme.bodyLg }
         }
 
         GridLayout {
@@ -51,7 +50,7 @@ Item {
                     }
                     Text { text: root.modeNames[Hp.ambientMode]; color: Theme.primary; font.family: Theme.displayFont; font.pixelSize: Theme.headlineLg; font.weight: Font.Bold }
                     Text {
-                        text: Hp.ambientMode === 0 ? "Maximum isolation"
+                        text: Hp.ambientMode === 0 ? "Noise cancelling on"
                             : Hp.ambientMode === 1 ? ("Level " + Hp.asmLevel)
                             : "ANC and ambient sound disabled"
                         color: Theme.textSecondary; font.pixelSize: Theme.bodyMd
@@ -106,7 +105,6 @@ Item {
                     anchors.margins: Theme.lg
                     spacing: Theme.sm
                     Text { text: "QUICK FEATURES"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm; font.weight: Font.Bold; font.letterSpacing: 1 }
-                    Text { text: "Manage device smart features."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
 
                     Rectangle {
                         visible: Hp.dseeAvailable
@@ -118,7 +116,7 @@ Item {
                             anchors.fill: parent; anchors.margins: Theme.sm; spacing: Theme.sm
                             ColumnLayout { spacing: 0
                                 Text { text: "DSEE Extreme"; color: Theme.textPrimary; font.pixelSize: Theme.bodyMd; font.weight: Font.DemiBold }
-                                Text { text: "Real-time upscaling"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                                Text { text: "Restore detail in compressed audio"; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
                             }
                             Item { Layout.fillWidth: true }
                             PillSwitch { checked: Hp.dsee; onToggled: (on) => Hp.dsee = on }

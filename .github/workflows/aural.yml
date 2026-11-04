@@ -1,18 +1,15 @@
 name: Aural
 
-# cmake.yml covers the legacy ImGui client. This workflow covers the Aural Qt/QML client:
-# the engine test suite, the Windows app build, qmllint, and the staged release folder.
-
 on:
   push:
-    branches: [master, multi-device]
+    branches: [main]
     paths:
       - 'Client/**'
       - 'packaging/**'
       - 'LICENSE'
       - '.github/workflows/aural.yml'
   pull_request:
-    branches: [master, multi-device]
+    branches: [main]
     paths:
       - 'Client/**'
       - 'packaging/**'
@@ -29,8 +26,6 @@ env:
 
 jobs:
   engine-tests:
-    # No Qt, no platform Bluetooth stack: every test drives the engine through
-    # FakeBluetoothConnector, so this is the fast signal and it runs anywhere.
     name: Engine tests (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -50,16 +45,11 @@ jobs:
         run: ctest --test-dir build/tests -C Release --output-on-failure
 
   aural-app:
-    # The Qt client is Windows-only today: it needs WindowsBluetoothConnector, the PnP
-    # battery property and the DWM dark title bar.
     name: Aural app (Windows)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # The build stamps the commit into the binary and BUILD-INFO.txt, so the artifact
-          # can be traced back to its source. A shallow checkout still has HEAD, which is all
-          # the stamp needs.
           fetch-depth: 1
 
       - name: Install Qt ${{ env.QT_VERSION }}
@@ -78,15 +68,10 @@ jobs:
         run: cmake --build build/aural --config Release --parallel
 
       - name: Controller tests
-        # Sessions, teardown ordering and capability gating live in HeadphonesController, so
-        # they can only be tested with a Qt event loop running. Driven by the same fake
-        # transport as the engine tests.
         run: ctest --test-dir build/aural -C Release --output-on-failure
 
       - name: QML lint
         shell: pwsh
-        # -W 0 fails the job on any warning. Context-property false positives are disabled
-        # in Client/qt/qml/.qmllint.ini; everything else is on.
         run: |
           $files = Get-ChildItem Client/qt/qml/*.qml | ForEach-Object { $_.FullName }
           qmllint -I build/aural -W 0 @files
@@ -96,9 +81,6 @@ jobs:
 
       - name: Smoke-check the staged folder
         shell: pwsh
-        # Not a launch test - CI has no interactive desktop. This only asserts the deploy
-        # step produced the pieces a machine without Qt needs. Launching on a clean machine
-        # is a manual step; see packaging/README.md.
         run: |
           $pkg = "build/aural/package/Aural"
           $required = @(
@@ -122,8 +104,6 @@ jobs:
       - name: Upload staged folder
         uses: actions/upload-artifact@v4
         with:
-          # The commit is in the artifact name as well as in BUILD-INFO.txt inside it, so a
-          # downloaded folder is identifiable without opening it.
           name: aural-win-x64-${{ github.sha }}
           path: build/aural/package/Aural
           if-no-files-found: error

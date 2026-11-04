@@ -1,7 +1,7 @@
 # Third-party notices
 
-Aural bundles the components listed here. Copyright lines for the fonts were read out of the
-`name` table of the exact files shipped in this build, not copied from a web page.
+Aural bundles the components below. Font copyright notices come from the
+embedded metadata of the bundled files.
 
 Aural itself is MIT licensed - see `LICENSE.txt` next to the executable.
 
@@ -47,8 +47,8 @@ here, see the archive link above, or open an issue on the Aural repository.
 
 ## Microsoft Visual C++ Runtime
 
-- Files: `msvcp140*.dll`, `vcruntime140*.dll`, `concrt140.dll` (whichever `windeployqt
-  --compiler-runtime` stages).
+- Files: `msvcp140*.dll`, `vcruntime140*.dll`, `concrt140.dll` (staged by CMake's
+  `InstallRequiredSystemLibraries`).
 - Copyright Microsoft Corporation. Redistributed under the redistributable-code terms of the
   Visual Studio license that produced this build:
   <https://visualstudio.microsoft.com/license-terms/>

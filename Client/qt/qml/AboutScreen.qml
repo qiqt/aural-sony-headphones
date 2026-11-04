@@ -47,7 +47,7 @@ Item {
                     id: disc
                     anchors.centerIn: parent
                     width: parent.width - Theme.md
-                    text: "Aural is an independent, third-party audio utility. It is not affiliated with, endorsed by, or sponsored by Sony."
+                    text: "Aural controls Sony headphones from Windows. It is not affiliated with Sony."
                     color: Theme.textSecondary
                     font.pixelSize: Theme.bodyMd
                     horizontalAlignment: Text.AlignHCenter
