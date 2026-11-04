@@ -48,3 +48,13 @@ layout and Bluetooth checks on that VM are still pending.
 See [PROTOCOL.md](../PROTOCOL.md) for the XM4 test results.
 
 The output is an unsigned portable folder, ready to zip and share.
+
+## Versions
+
+Aural starts at 0.1.0. Set the version in `Client/qt/CMakeLists.txt`; the app,
+Windows file properties, build information and ZIP name all use that value.
+Release tags use `v` followed by the same version, for example `v0.1.0`.
+
+Use 0.1.1 for a fix to 0.1.0, and 0.2.0 for the next feature release.
+Development builds keep the version and include their Git revision. Deleted
+tags don't change the version compiled into the app.

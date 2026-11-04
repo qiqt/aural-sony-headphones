@@ -102,6 +102,29 @@ jobs:
           Write-Host "Staged folder looks complete ($((Get-ChildItem -Recurse -File $pkg).Count) files)."
           Get-Content (Join-Path $pkg "BUILD-INFO.txt")
 
+      - name: Check package version
+        shell: pwsh
+        run: |
+          $source = Get-Content Client/qt/CMakeLists.txt -Raw
+          $version = [regex]::Match($source, 'project\(Aural VERSION ([0-9]+\.[0-9]+\.[0-9]+)').Groups[1].Value
+          if (-not $version) { throw "Missing project version" }
+          $pkg = "build/aural/package/Aural"
+          $exe = (Get-Item "$pkg/appAural.exe").VersionInfo
+          if ($exe.ProductVersion -ne $version -or $exe.FileVersion -ne $version) {
+            throw "Executable version does not match $version"
+          }
+          $revision = $env:GITHUB_SHA.Substring(0, 10)
+          $info = Get-Content "$pkg/BUILD-INFO.txt" -Raw
+          if (-not $info.Contains("Aural $version") -or -not $info.Contains("Source revision : $revision")) {
+            throw "Build information does not match this version and commit"
+          }
+          if (-not (Test-Path "build/aural/Aural-$version-$revision-win-x64.zip")) {
+            throw "Missing versioned ZIP"
+          }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Release tag does not match v$version"
+          }
+
       - name: Upload portable ZIP
         uses: actions/upload-artifact@v4
         with:

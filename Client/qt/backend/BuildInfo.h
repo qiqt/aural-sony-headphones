@@ -15,7 +15,7 @@ class BuildInfo : public QObject
     // True when the working tree had uncommitted changes at configure time, so the revision
     // alone does not describe this binary.
     Q_PROPERTY(bool modified READ modified CONSTANT)
-    // "2.1.0 (d280814 on multi-device, modified)" - one line, ready to paste into a report.
+    // Version, revision, branch and working-tree state for bug reports.
     Q_PROPERTY(QString summary READ summary CONSTANT)
 
 public:

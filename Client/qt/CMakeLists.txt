@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(Aural VERSION 2.1.0 LANGUAGES CXX)
+project(Aural VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,6 +79,8 @@ qt_add_executable(appAural
 )
 
 if (WIN32)
+    configure_file(app-version.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app-version.rc" @ONLY)
+    target_sources(appAural PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/app-version.rc")
     target_sources(appAural PRIVATE ${ENGINE_DIR}/windows/WindowsBluetoothConnector.cpp)
     target_compile_definitions(appAural PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN)
     target_link_libraries(appAural PRIVATE ws2_32 rpcrt4 Bthprops setupapi dwmapi)
