@@ -53,6 +53,7 @@ here, see the archive link above, or open an issue on the Aural repository.
   Visual Studio license that produced this build:
   <https://visualstudio.microsoft.com/license-terms/>
 
+
 ---
 
 # SIL Open Font License, Version 1.1
