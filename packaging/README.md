@@ -13,6 +13,17 @@ folder. The target rebuilds the folder and copies the app, Qt libraries and
 plugins, MSVC runtime, build information and license notices. Fonts are
 embedded in the executable.
 
+The `licenses` folder includes the full LGPLv3 and GPLv3 texts for Qt.
+
+To create a ZIP containing that folder:
+
+```powershell
+cmake --build build/aural-release --config Release --target aural_archive
+```
+
+The ZIP is saved in `build/aural-release`. Its name includes the app version
+and source revision. Extract it before running `Aural/appAural.exe`.
+
 The build uses `windeployqt --no-translations` for Qt and CMake's
 `InstallRequiredSystemLibraries` for the MSVC runtime. `windeployqt` is
 called directly to support source paths containing spaces.

@@ -224,6 +224,8 @@ sponsored by Sony. See THIRD-PARTY-NOTICES.md for the components bundled in this
                 "${AURAL_REPO_DIR}/LICENSE" "${AURAL_PACKAGE_DIR}/LICENSE.txt"
         COMMAND ${CMAKE_COMMAND} -E copy
                 "${AURAL_REPO_DIR}/packaging/THIRD-PARTY-NOTICES.md" "${AURAL_PACKAGE_DIR}/"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                "${AURAL_REPO_DIR}/packaging/licenses" "${AURAL_PACKAGE_DIR}/licenses"
         COMMENT "Staging a self-contained Aural folder in ${AURAL_PACKAGE_DIR}"
         VERBATIM
     )
@@ -237,4 +239,14 @@ sponsored by Sony. See THIRD-PARTY-NOTICES.md for the components bundled in this
     endif()
 
     add_dependencies(aural_package appAural)
+
+    add_custom_target(aural_archive
+        COMMAND ${CMAKE_COMMAND} -E tar cf
+                "${CMAKE_BINARY_DIR}/Aural-${PROJECT_VERSION}-${AURAL_BUILD_REVISION}-win-x64.zip"
+                --format=zip Aural
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/package"
+        COMMENT "Creating the portable Aural ZIP"
+        VERBATIM
+    )
+    add_dependencies(aural_archive aural_package)
 endif()

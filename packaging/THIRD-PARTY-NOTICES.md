@@ -18,8 +18,8 @@ sponsored by Sony.
 - License: **LGPL-3.0-only** (the open-source Qt build Aural links against). Some Qt modules
   are offered under other terms; only the modules listed above are distributed here.
 - Upstream: <https://www.qt.io/> - source: <https://download.qt.io/archive/qt/6.8/6.8.3/single/>
-- Full license text: <https://www.gnu.org/licenses/lgpl-3.0.txt> and
-  <https://doc.qt.io/qt-6/lgpl.html>
+- Full license texts: [LGPLv3](licenses/LGPL-3.0-only.txt) and
+  [GPLv3](licenses/GPL-3.0-only.txt), copied from Qt 6.8.3's `LICENSES` directory.
 
 **Written offer.** Aural links Qt dynamically and ships it as separate DLLs, so Qt can be
 replaced: put a different build of the same Qt version's DLLs in this folder and the

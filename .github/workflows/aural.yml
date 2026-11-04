@@ -76,8 +76,8 @@ jobs:
           $files = Get-ChildItem Client/qt/qml/*.qml | ForEach-Object { $_.FullName }
           qmllint -I build/aural -W 0 @files
 
-      - name: Stage release folder
-        run: cmake --build build/aural --config Release --target aural_package
+      - name: Build portable ZIP
+        run: cmake --build build/aural --config Release --target aural_archive
 
       - name: Smoke-check the staged folder
         shell: pwsh
@@ -90,7 +90,8 @@ jobs:
             "platforms/qwindows.dll",
             "qml/QtQuick/Controls/Basic/qmldir",
             "vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll",
-            "BUILD-INFO.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.md"
+            "BUILD-INFO.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.md",
+            "licenses/LGPL-3.0-only.txt", "licenses/GPL-3.0-only.txt"
           )
           $missing = $required | Where-Object { -not (Test-Path (Join-Path $pkg $_)) }
           if ($missing) {
@@ -101,9 +102,9 @@ jobs:
           Write-Host "Staged folder looks complete ($((Get-ChildItem -Recurse -File $pkg).Count) files)."
           Get-Content (Join-Path $pkg "BUILD-INFO.txt")
 
-      - name: Upload staged folder
+      - name: Upload portable ZIP
         uses: actions/upload-artifact@v4
         with:
           name: aural-win-x64-${{ github.sha }}
-          path: build/aural/package/Aural
+          path: build/aural/Aural-*-win-x64.zip
           if-no-files-found: error

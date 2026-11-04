@@ -25,6 +25,14 @@ Dashboard and equalizer, shown with demo data.
 
 ## Build and run
 
+Windows builds are available from the
+[Aural workflow](https://github.com/qiqt/aural-sony-headphones/actions/workflows/aural.yml).
+Open a successful run and download its `aural-win-x64` artifact. GitHub requires
+sign-in for artifact downloads. Extract the download and the portable ZIP inside,
+then run `Aural/appAural.exe`.
+
+To build from source:
+
 Requires Windows, Visual Studio 2022 C++ build tools, CMake 3.22 or later,
 and Qt 6.5 or later with Widgets, Quick, QuickControls2, Svg and Test.
 Qt 6.8.3 is used in CI.
