@@ -1,0 +1,3445 @@
+{
+  "artifact_input_sha256": "7901e52cf38c5ebd0d5be760e2b105df7ed7ab85c8e732dd4481c910f8fda31e",
+  "scope": "V2 command and selector values extracted from Sony Sound Connect 13.3.0.",
+  "enums": [
+    {
+      "sha256": "f8689cac34171b13d802fae8d910786557cd07dda7388408fc28f331557e56f4",
+      "values": [
+        {
+          "name": "CONNECT_GET_PROTOCOL_INFO",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 1257
+        },
+        {
+          "name": "CONNECT_RET_PROTOCOL_INFO",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 1277
+        },
+        {
+          "name": "CONNECT_GET_CAPABILITY_INFO",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 1297
+        },
+        {
+          "name": "CONNECT_RET_CAPABILITY_INFO",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 1317
+        },
+        {
+          "name": "CONNECT_GET_DEVICE_INFO",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 1337
+        },
+        {
+          "name": "CONNECT_RET_DEVICE_INFO",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 1357
+        },
+        {
+          "name": "CONNECT_GET_SUPPORT_FUNCTION",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 1377
+        },
+        {
+          "name": "CONNECT_RET_SUPPORT_FUNCTION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 1397
+        },
+        {
+          "name": "GET_TEST",
+          "byte": 15,
+          "hex": "0F",
+          "source_line": 1422
+        },
+        {
+          "name": "COMMON_GET_CAPABILITY",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 1447
+        },
+        {
+          "name": "COMMON_RET_CAPABILITY",
+          "byte": 17,
+          "hex": "11",
+          "source_line": 1472
+        },
+        {
+          "name": "COMMON_GET_STATUS",
+          "byte": 18,
+          "hex": "12",
+          "source_line": 1497
+        },
+        {
+          "name": "COMMON_RET_STATUS",
+          "byte": 19,
+          "hex": "13",
+          "source_line": 1522
+        },
+        {
+          "name": "COMMON_NTFY_STATUS",
+          "byte": 21,
+          "hex": "15",
+          "source_line": 1547
+        },
+        {
+          "name": "COMMON_SET_PARAM",
+          "byte": 24,
+          "hex": "18",
+          "source_line": 1572
+        },
+        {
+          "name": "COMMON_NTFY_PARAM",
+          "byte": 25,
+          "hex": "19",
+          "source_line": 1593
+        },
+        {
+          "name": "POWER_GET_CAPABILITY",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 1614
+        },
+        {
+          "name": "POWER_RET_CAPABILITY",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 1635
+        },
+        {
+          "name": "POWER_GET_STATUS",
+          "byte": 34,
+          "hex": "22",
+          "source_line": 1656
+        },
+        {
+          "name": "POWER_RET_STATUS",
+          "byte": 35,
+          "hex": "23",
+          "source_line": 1677
+        },
+        {
+          "name": "POWER_SET_STATUS",
+          "byte": 36,
+          "hex": "24",
+          "source_line": 1702
+        },
+        {
+          "name": "POWER_NTFY_STATUS",
+          "byte": 37,
+          "hex": "25",
+          "source_line": 1723
+        },
+        {
+          "name": "POWER_GET_PARAM",
+          "byte": 38,
+          "hex": "26",
+          "source_line": 1748
+        },
+        {
+          "name": "POWER_RET_PARAM",
+          "byte": 39,
+          "hex": "27",
+          "source_line": 1773
+        },
+        {
+          "name": "POWER_SET_PARAM",
+          "byte": 40,
+          "hex": "28",
+          "source_line": 1794
+        },
+        {
+          "name": "POWER_NTFY_PARAM",
+          "byte": 41,
+          "hex": "29",
+          "source_line": 1815
+        },
+        {
+          "name": "UPDT_GET_CAPABILITY",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 1840
+        },
+        {
+          "name": "UPDT_RET_CAPABILITY",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 1865
+        },
+        {
+          "name": "UPDT_GET_STATUS",
+          "byte": 50,
+          "hex": "32",
+          "source_line": 1890
+        },
+        {
+          "name": "UPDT_RET_STATUS",
+          "byte": 51,
+          "hex": "33",
+          "source_line": 1915
+        },
+        {
+          "name": "UPDT_SET_STATUS",
+          "byte": 52,
+          "hex": "34",
+          "source_line": 1940
+        },
+        {
+          "name": "UPDT_NTFY_STATUS",
+          "byte": 53,
+          "hex": "35",
+          "source_line": 1965
+        },
+        {
+          "name": "UPDT_GET_PARAM",
+          "byte": 54,
+          "hex": "36",
+          "source_line": 1986
+        },
+        {
+          "name": "UPDT_RET_PARAM",
+          "byte": 55,
+          "hex": "37",
+          "source_line": 2007
+        },
+        {
+          "name": "UPDT_SET_PARAM",
+          "byte": 56,
+          "hex": "38",
+          "source_line": 2028
+        },
+        {
+          "name": "UPDT_NTFY_PARAM",
+          "byte": 57,
+          "hex": "39",
+          "source_line": 2049
+        },
+        {
+          "name": "UPDT_TRANSFER_DATA",
+          "byte": 62,
+          "hex": "3E",
+          "source_line": 2070
+        },
+        {
+          "name": "UPDT_NTFY_MESSAGE",
+          "byte": 63,
+          "hex": "3F",
+          "source_line": 2091
+        },
+        {
+          "name": "LEA_GET_CAPABILITY",
+          "byte": 64,
+          "hex": "40",
+          "source_line": 2116
+        },
+        {
+          "name": "LEA_RET_CAPABILITY",
+          "byte": 65,
+          "hex": "41",
+          "source_line": 2141
+        },
+        {
+          "name": "LEA_GET_STATUS",
+          "byte": 66,
+          "hex": "42",
+          "source_line": 2166
+        },
+        {
+          "name": "LEA_RET_STATUS",
+          "byte": 67,
+          "hex": "43",
+          "source_line": 2191
+        },
+        {
+          "name": "LEA_NTFY_STATUS",
+          "byte": 69,
+          "hex": "45",
+          "source_line": 2216
+        },
+        {
+          "name": "LEA_GET_PARAM",
+          "byte": 70,
+          "hex": "46",
+          "source_line": 2241
+        },
+        {
+          "name": "LEA_RET_PARAM",
+          "byte": 71,
+          "hex": "47",
+          "source_line": 2266
+        },
+        {
+          "name": "LEA_SET_PARAM",
+          "byte": 72,
+          "hex": "48",
+          "source_line": 2291
+        },
+        {
+          "name": "LEA_NTFY_PARAM",
+          "byte": 73,
+          "hex": "49",
+          "source_line": 2316
+        },
+        {
+          "name": "LEA_GET_EXTENDED_PARAM",
+          "byte": 74,
+          "hex": "4A",
+          "source_line": 2341
+        },
+        {
+          "name": "LEA_RET_EXTENDED_PARAM",
+          "byte": 75,
+          "hex": "4B",
+          "source_line": 2366
+        },
+        {
+          "name": "LEA_SET_EXTENDED_PARAM",
+          "byte": 76,
+          "hex": "4C",
+          "source_line": 2391
+        },
+        {
+          "name": "LEA_NTFY_EXTENDED_PARAM",
+          "byte": 77,
+          "hex": "4D",
+          "source_line": 2416
+        },
+        {
+          "name": "EQEBB_GET_CAPABILITY",
+          "byte": 80,
+          "hex": "50",
+          "source_line": 2441
+        },
+        {
+          "name": "EQEBB_RET_CAPABILITY",
+          "byte": 81,
+          "hex": "51",
+          "source_line": 2466
+        },
+        {
+          "name": "EQEBB_GET_STATUS",
+          "byte": 82,
+          "hex": "52",
+          "source_line": 2491
+        },
+        {
+          "name": "EQEBB_RET_STATUS",
+          "byte": 83,
+          "hex": "53",
+          "source_line": 2516
+        },
+        {
+          "name": "EQEBB_NTFY_STATUS",
+          "byte": 85,
+          "hex": "55",
+          "source_line": 2541
+        },
+        {
+          "name": "EQEBB_GET_PARAM",
+          "byte": 86,
+          "hex": "56",
+          "source_line": 2566
+        },
+        {
+          "name": "EQEBB_RET_PARAM",
+          "byte": 87,
+          "hex": "57",
+          "source_line": 2591
+        },
+        {
+          "name": "EQEBB_SET_PARAM",
+          "byte": 88,
+          "hex": "58",
+          "source_line": 2616
+        },
+        {
+          "name": "EQEBB_NTFY_PARAM",
+          "byte": 89,
+          "hex": "59",
+          "source_line": 2641
+        },
+        {
+          "name": "EQEBB_GET_EXTENDED_INFO",
+          "byte": 90,
+          "hex": "5A",
+          "source_line": 2666
+        },
+        {
+          "name": "EQEBB_RET_EXTENDED_INFO",
+          "byte": 91,
+          "hex": "5B",
+          "source_line": 2691
+        },
+        {
+          "name": "NCASM_GET_CAPABILITY",
+          "byte": 96,
+          "hex": "60",
+          "source_line": 2716
+        },
+        {
+          "name": "NCASM_RET_CAPABILITY",
+          "byte": 97,
+          "hex": "61",
+          "source_line": 2741
+        },
+        {
+          "name": "NCASM_GET_STATUS",
+          "byte": 98,
+          "hex": "62",
+          "source_line": 2766
+        },
+        {
+          "name": "NCASM_RET_STATUS",
+          "byte": 99,
+          "hex": "63",
+          "source_line": 2791
+        },
+        {
+          "name": "NCASM_SET_STATUS",
+          "byte": 100,
+          "hex": "64",
+          "source_line": 2816
+        },
+        {
+          "name": "NCASM_NTFY_STATUS",
+          "byte": 101,
+          "hex": "65",
+          "source_line": 2841
+        },
+        {
+          "name": "NCASM_GET_PARAM",
+          "byte": 102,
+          "hex": "66",
+          "source_line": 2866
+        },
+        {
+          "name": "NCASM_RET_PARAM",
+          "byte": 103,
+          "hex": "67",
+          "source_line": 2891
+        },
+        {
+          "name": "NCASM_SET_PARAM",
+          "byte": 104,
+          "hex": "68",
+          "source_line": 2916
+        },
+        {
+          "name": "NCASM_NTFY_PARAM",
+          "byte": 105,
+          "hex": "69",
+          "source_line": 2941
+        },
+        {
+          "name": "SENSE_GET_CAPABILITY",
+          "byte": 112,
+          "hex": "70",
+          "source_line": 2966
+        },
+        {
+          "name": "SENSE_RET_CAPABILITY",
+          "byte": 113,
+          "hex": "71",
+          "source_line": 2991
+        },
+        {
+          "name": "SENSE_GET_STATUS",
+          "byte": 114,
+          "hex": "72",
+          "source_line": 3016
+        },
+        {
+          "name": "SENSE_RET_STATUS",
+          "byte": 115,
+          "hex": "73",
+          "source_line": 3041
+        },
+        {
+          "name": "SENSE_SET_STATUS",
+          "byte": 116,
+          "hex": "74",
+          "source_line": 3066
+        },
+        {
+          "name": "SENSE_NTFY_STATUS",
+          "byte": 117,
+          "hex": "75",
+          "source_line": 3091
+        },
+        {
+          "name": "SENSE_GET_PARAM",
+          "byte": 118,
+          "hex": "76",
+          "source_line": 3116
+        },
+        {
+          "name": "SENSE_RET_PARAM",
+          "byte": 119,
+          "hex": "77",
+          "source_line": 3141
+        },
+        {
+          "name": "SENSE_SET_PARAM",
+          "byte": 120,
+          "hex": "78",
+          "source_line": 3166
+        },
+        {
+          "name": "SENSE_NTFY_PARAM",
+          "byte": 121,
+          "hex": "79",
+          "source_line": 3191
+        },
+        {
+          "name": "SENSE_GET_EXT_INFO",
+          "byte": 122,
+          "hex": "7A",
+          "source_line": 3216
+        },
+        {
+          "name": "SENSE_RET_EXT_INFO",
+          "byte": 123,
+          "hex": "7B",
+          "source_line": 3241
+        },
+        {
+          "name": "OPT_GET_CAPABILITY",
+          "byte": 128,
+          "hex": "80",
+          "source_line": 3266
+        },
+        {
+          "name": "OPT_RET_CAPABILITY",
+          "byte": 129,
+          "hex": "81",
+          "source_line": 3291
+        },
+        {
+          "name": "OPT_GET_STATUS",
+          "byte": 130,
+          "hex": "82",
+          "source_line": 3316
+        },
+        {
+          "name": "OPT_RET_STATUS",
+          "byte": 131,
+          "hex": "83",
+          "source_line": 3341
+        },
+        {
+          "name": "OPT_SET_STATUS",
+          "byte": 132,
+          "hex": "84",
+          "source_line": 3366
+        },
+        {
+          "name": "OPT_NTFY_STATUS",
+          "byte": 133,
+          "hex": "85",
+          "source_line": 3391
+        },
+        {
+          "name": "OPT_GET_PARAM",
+          "byte": 134,
+          "hex": "86",
+          "source_line": 3416
+        },
+        {
+          "name": "OPT_RET_PARAM",
+          "byte": 135,
+          "hex": "87",
+          "source_line": 3441
+        },
+        {
+          "name": "OPT_SET_PARAM",
+          "byte": 136,
+          "hex": "88",
+          "source_line": 3466
+        },
+        {
+          "name": "OPT_NTFY_PARAM",
+          "byte": 137,
+          "hex": "89",
+          "source_line": 3491
+        },
+        {
+          "name": "ALERT_GET_CAPABILITY",
+          "byte": 144,
+          "hex": "90",
+          "source_line": 3516
+        },
+        {
+          "name": "ALERT_RET_CAPABILITY",
+          "byte": 145,
+          "hex": "91",
+          "source_line": 3541
+        },
+        {
+          "name": "ALERT_GET_STATUS",
+          "byte": 146,
+          "hex": "92",
+          "source_line": 3566
+        },
+        {
+          "name": "ALERT_RET_STATUS",
+          "byte": 147,
+          "hex": "93",
+          "source_line": 3591
+        },
+        {
+          "name": "ALERT_SET_STATUS",
+          "byte": 148,
+          "hex": "94",
+          "source_line": 3616
+        },
+        {
+          "name": "ALERT_NTFY_STATUS",
+          "byte": 149,
+          "hex": "95",
+          "source_line": 3641
+        },
+        {
+          "name": "ALERT_SET_PARAM",
+          "byte": 152,
+          "hex": "98",
+          "source_line": 3666
+        },
+        {
+          "name": "ALERT_NTFY_PARAM",
+          "byte": 153,
+          "hex": "99",
+          "source_line": 3691
+        },
+        {
+          "name": "PLAY_GET_CAPABILITY",
+          "byte": 160,
+          "hex": "A0",
+          "source_line": 3716
+        },
+        {
+          "name": "PLAY_RET_CAPABILITY",
+          "byte": 161,
+          "hex": "A1",
+          "source_line": 3741
+        },
+        {
+          "name": "PLAY_GET_STATUS",
+          "byte": 162,
+          "hex": "A2",
+          "source_line": 3766
+        },
+        {
+          "name": "PLAY_RET_STATUS",
+          "byte": 163,
+          "hex": "A3",
+          "source_line": 3791
+        },
+        {
+          "name": "PLAY_SET_STATUS",
+          "byte": 164,
+          "hex": "A4",
+          "source_line": 3816
+        },
+        {
+          "name": "PLAY_NTFY_STATUS",
+          "byte": 165,
+          "hex": "A5",
+          "source_line": 3841
+        },
+        {
+          "name": "PLAY_GET_PARAM",
+          "byte": 166,
+          "hex": "A6",
+          "source_line": 3866
+        },
+        {
+          "name": "PLAY_RET_PARAM",
+          "byte": 167,
+          "hex": "A7",
+          "source_line": 3891
+        },
+        {
+          "name": "PLAY_SET_PARAM",
+          "byte": 168,
+          "hex": "A8",
+          "source_line": 3916
+        },
+        {
+          "name": "PLAY_NTFY_PARAM",
+          "byte": 169,
+          "hex": "A9",
+          "source_line": 3941
+        },
+        {
+          "name": "SAR_AUTO_PLAY_GET_CAPABILITY",
+          "byte": 176,
+          "hex": "B0",
+          "source_line": 3966
+        },
+        {
+          "name": "SAR_AUTO_PLAY_RET_CAPABILITY",
+          "byte": 177,
+          "hex": "B1",
+          "source_line": 3991
+        },
+        {
+          "name": "SAR_AUTO_PLAY_GET_STATUS",
+          "byte": 178,
+          "hex": "B2",
+          "source_line": 4016
+        },
+        {
+          "name": "SAR_AUTO_PLAY_RET_STATUS",
+          "byte": 179,
+          "hex": "B3",
+          "source_line": 4041
+        },
+        {
+          "name": "SAR_AUTO_PLAY_NTFY_STATUS",
+          "byte": 181,
+          "hex": "B5",
+          "source_line": 4066
+        },
+        {
+          "name": "SAR_AUTO_PLAY_GET_PARAM",
+          "byte": 182,
+          "hex": "B6",
+          "source_line": 4091
+        },
+        {
+          "name": "SAR_AUTO_PLAY_RET_PARAM",
+          "byte": 183,
+          "hex": "B7",
+          "source_line": 4116
+        },
+        {
+          "name": "SAR_AUTO_PLAY_SET_PARAM",
+          "byte": 184,
+          "hex": "B8",
+          "source_line": 4141
+        },
+        {
+          "name": "SAR_AUTO_PLAY_NTFY_PARAM",
+          "byte": 185,
+          "hex": "B9",
+          "source_line": 4166
+        },
+        {
+          "name": "LOG_SET_STATUS",
+          "byte": 196,
+          "hex": "C4",
+          "source_line": 4191
+        },
+        {
+          "name": "LOG_NTFY_PARAM",
+          "byte": 201,
+          "hex": "C9",
+          "source_line": 4216
+        },
+        {
+          "name": "GENERAL_SETTING_GET_CAPABILITY",
+          "byte": 208,
+          "hex": "D0",
+          "source_line": 4241
+        },
+        {
+          "name": "GENERAL_SETTING_RET_CAPABILITY",
+          "byte": 209,
+          "hex": "D1",
+          "source_line": 4266
+        },
+        {
+          "name": "GENERAL_SETTING_GET_STATUS",
+          "byte": 210,
+          "hex": "D2",
+          "source_line": 4291
+        },
+        {
+          "name": "GENERAL_SETTING_RET_STATUS",
+          "byte": 211,
+          "hex": "D3",
+          "source_line": 4316
+        },
+        {
+          "name": "GENERAL_SETTING_NTFY_STATUS",
+          "byte": 213,
+          "hex": "D5",
+          "source_line": 4341
+        },
+        {
+          "name": "GENERAL_SETTING_GET_PARAM",
+          "byte": 214,
+          "hex": "D6",
+          "source_line": 4366
+        },
+        {
+          "name": "GENERAL_SETTING_RET_PARAM",
+          "byte": 215,
+          "hex": "D7",
+          "source_line": 4391
+        },
+        {
+          "name": "GENERAL_SETTING_SET_PARAM",
+          "byte": 216,
+          "hex": "D8",
+          "source_line": 4416
+        },
+        {
+          "name": "GENERAL_SETTING_NTNY_PARAM",
+          "byte": 217,
+          "hex": "D9",
+          "source_line": 4441
+        },
+        {
+          "name": "AUDIO_GET_CAPABILITY",
+          "byte": 224,
+          "hex": "E0",
+          "source_line": 4466
+        },
+        {
+          "name": "AUDIO_RET_CAPABILITY",
+          "byte": 225,
+          "hex": "E1",
+          "source_line": 4491
+        },
+        {
+          "name": "AUDIO_GET_STATUS",
+          "byte": 226,
+          "hex": "E2",
+          "source_line": 4516
+        },
+        {
+          "name": "AUDIO_RET_STATUS",
+          "byte": 227,
+          "hex": "E3",
+          "source_line": 4541
+        },
+        {
+          "name": "AUDIO_SET_STATUS",
+          "byte": 228,
+          "hex": "E4",
+          "source_line": 4566
+        },
+        {
+          "name": "AUDIO_NTFY_STATUS",
+          "byte": 229,
+          "hex": "E5",
+          "source_line": 4591
+        },
+        {
+          "name": "AUDIO_GET_PARAM",
+          "byte": 230,
+          "hex": "E6",
+          "source_line": 4616
+        },
+        {
+          "name": "AUDIO_RET_PARAM",
+          "byte": 231,
+          "hex": "E7",
+          "source_line": 4641
+        },
+        {
+          "name": "AUDIO_SET_PARAM",
+          "byte": 232,
+          "hex": "E8",
+          "source_line": 4666
+        },
+        {
+          "name": "AUDIO_NTFY_PARAM",
+          "byte": 233,
+          "hex": "E9",
+          "source_line": 4691
+        },
+        {
+          "name": "SYSTEM_GET_CAPABILITY",
+          "byte": 240,
+          "hex": "F0",
+          "source_line": 4716
+        },
+        {
+          "name": "SYSTEM_RET_CAPABILITY",
+          "byte": 241,
+          "hex": "F1",
+          "source_line": 4741
+        },
+        {
+          "name": "SYSTEM_GET_STATUS",
+          "byte": 242,
+          "hex": "F2",
+          "source_line": 4766
+        },
+        {
+          "name": "SYSTEM_RET_STATUS",
+          "byte": 243,
+          "hex": "F3",
+          "source_line": 4791
+        },
+        {
+          "name": "SYSTEM_SET_STATUS",
+          "byte": 244,
+          "hex": "F4",
+          "source_line": 4816
+        },
+        {
+          "name": "SYSTEM_NTFY_STATUS",
+          "byte": 245,
+          "hex": "F5",
+          "source_line": 4841
+        },
+        {
+          "name": "SYSTEM_GET_PARAM",
+          "byte": 246,
+          "hex": "F6",
+          "source_line": 4866
+        },
+        {
+          "name": "SYSTEM_RET_PARAM",
+          "byte": 247,
+          "hex": "F7",
+          "source_line": 4891
+        },
+        {
+          "name": "SYSTEM_SET_PARAM",
+          "byte": 248,
+          "hex": "F8",
+          "source_line": 4915
+        },
+        {
+          "name": "SYSTEM_NTFY_PARAM",
+          "byte": 249,
+          "hex": "F9",
+          "source_line": 4939
+        },
+        {
+          "name": "SYSTEM_GET_EXT_PARAM",
+          "byte": 250,
+          "hex": "FA",
+          "source_line": 4963
+        },
+        {
+          "name": "SYSTEM_RET_EXT_PARAM",
+          "byte": 251,
+          "hex": "FB",
+          "source_line": 4987
+        },
+        {
+          "name": "SYSTEM_SET_EXT_PARAM",
+          "byte": 252,
+          "hex": "FC",
+          "source_line": 5011
+        },
+        {
+          "name": "SYSTEM_NTFY_EXT_PARAM",
+          "byte": 253,
+          "hex": "FD",
+          "source_line": 5035
+        },
+        {
+          "name": "UNKNOWN",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 5059
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/Command.smali"
+    },
+    {
+      "sha256": "04b717a85d55b95a8c80d30432cee9b33440d84fa6b4063e532692878d1f5ad9",
+      "values": [
+        {
+          "name": "CONNECT_GET_SUPPORT_FUNCTION",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 968
+        },
+        {
+          "name": "CONNECT_RET_SUPPORT_FUNCTION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 991
+        },
+        {
+          "name": "POWER_GET_CAPABILITY",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 1015
+        },
+        {
+          "name": "POWER_RET_CAPABILITY",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 1039
+        },
+        {
+          "name": "POWER_GET_STATUS",
+          "byte": 34,
+          "hex": "22",
+          "source_line": 1063
+        },
+        {
+          "name": "POWER_RET_STATUS",
+          "byte": 35,
+          "hex": "23",
+          "source_line": 1087
+        },
+        {
+          "name": "POWER_SET_STATUS",
+          "byte": 36,
+          "hex": "24",
+          "source_line": 1108
+        },
+        {
+          "name": "POWER_NTFY_STATUS",
+          "byte": 37,
+          "hex": "25",
+          "source_line": 1129
+        },
+        {
+          "name": "POWER_GET_PARAM",
+          "byte": 38,
+          "hex": "26",
+          "source_line": 1154
+        },
+        {
+          "name": "POWER_RET_PARAM",
+          "byte": 39,
+          "hex": "27",
+          "source_line": 1179
+        },
+        {
+          "name": "POWER_SET_PARAM",
+          "byte": 40,
+          "hex": "28",
+          "source_line": 1204
+        },
+        {
+          "name": "POWER_NTFY_PARAM",
+          "byte": 41,
+          "hex": "29",
+          "source_line": 1229
+        },
+        {
+          "name": "PERI_GET_CAPABILITY",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 1254
+        },
+        {
+          "name": "PERI_RET_CAPABILITY",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 1279
+        },
+        {
+          "name": "PERI_GET_STATUS",
+          "byte": 50,
+          "hex": "32",
+          "source_line": 1304
+        },
+        {
+          "name": "PERI_RET_STATUS",
+          "byte": 51,
+          "hex": "33",
+          "source_line": 1329
+        },
+        {
+          "name": "PERI_SET_STATUS",
+          "byte": 52,
+          "hex": "34",
+          "source_line": 1354
+        },
+        {
+          "name": "PERI_NTFY_STATUS",
+          "byte": 53,
+          "hex": "35",
+          "source_line": 1379
+        },
+        {
+          "name": "PERI_GET_PARAM",
+          "byte": 54,
+          "hex": "36",
+          "source_line": 1404
+        },
+        {
+          "name": "PERI_RET_PARAM",
+          "byte": 55,
+          "hex": "37",
+          "source_line": 1429
+        },
+        {
+          "name": "PERI_SET_PARAM",
+          "byte": 56,
+          "hex": "38",
+          "source_line": 1454
+        },
+        {
+          "name": "PERI_NTFY_PARAM",
+          "byte": 57,
+          "hex": "39",
+          "source_line": 1479
+        },
+        {
+          "name": "PERI_SET_EXTENDED_PARAM",
+          "byte": 60,
+          "hex": "3C",
+          "source_line": 1504
+        },
+        {
+          "name": "PERI_NTFY_EXTENDED_PARAM",
+          "byte": 61,
+          "hex": "3D",
+          "source_line": 1529
+        },
+        {
+          "name": "VOICE_GUIDANCE_GET_CAPABILITY",
+          "byte": 64,
+          "hex": "40",
+          "source_line": 1554
+        },
+        {
+          "name": "VOICE_GUIDANCE_RET_CAPABILITY",
+          "byte": 65,
+          "hex": "41",
+          "source_line": 1579
+        },
+        {
+          "name": "VOICE_GUIDANCE_GET_STATUS",
+          "byte": 66,
+          "hex": "42",
+          "source_line": 1604
+        },
+        {
+          "name": "VOICE_GUIDANCE_RET_STATUS",
+          "byte": 67,
+          "hex": "43",
+          "source_line": 1629
+        },
+        {
+          "name": "VOICE_GUIDANCE_SET_STATUS",
+          "byte": 68,
+          "hex": "44",
+          "source_line": 1654
+        },
+        {
+          "name": "VOICE_GUIDANCE_NTFY_STATUS",
+          "byte": 69,
+          "hex": "45",
+          "source_line": 1679
+        },
+        {
+          "name": "VOICE_GUIDANCE_GET_PARAM",
+          "byte": 70,
+          "hex": "46",
+          "source_line": 1704
+        },
+        {
+          "name": "VOICE_GUIDANCE_RET_PARAM",
+          "byte": 71,
+          "hex": "47",
+          "source_line": 1729
+        },
+        {
+          "name": "VOICE_GUIDANCE_SET_PARAM",
+          "byte": 72,
+          "hex": "48",
+          "source_line": 1750
+        },
+        {
+          "name": "VOICE_GUIDANCE_NTFY_PARAM",
+          "byte": 73,
+          "hex": "49",
+          "source_line": 1771
+        },
+        {
+          "name": "VOICE_GUIDANCE_GET_EXTENDED_PARAM",
+          "byte": 74,
+          "hex": "4A",
+          "source_line": 1792
+        },
+        {
+          "name": "VOICE_GUIDANCE_RET_EXTENDED_PARAM",
+          "byte": 75,
+          "hex": "4B",
+          "source_line": 1813
+        },
+        {
+          "name": "SAFE_LISTENING_GET_CAPABILITY",
+          "byte": 80,
+          "hex": "50",
+          "source_line": 1834
+        },
+        {
+          "name": "SAFE_LISTENING_RET_CAPABILITY",
+          "byte": 81,
+          "hex": "51",
+          "source_line": 1855
+        },
+        {
+          "name": "SAFE_LISTENING_GET_STATUS",
+          "byte": 82,
+          "hex": "52",
+          "source_line": 1876
+        },
+        {
+          "name": "SAFE_LISTENING_RET_STATUS",
+          "byte": 83,
+          "hex": "53",
+          "source_line": 1897
+        },
+        {
+          "name": "SAFE_LISTENING_SET_STATUS",
+          "byte": 84,
+          "hex": "54",
+          "source_line": 1918
+        },
+        {
+          "name": "SAFE_LISTENING_NTFY_STATUS",
+          "byte": 85,
+          "hex": "55",
+          "source_line": 1939
+        },
+        {
+          "name": "SAFE_LISTENING_GET_PARAM",
+          "byte": 86,
+          "hex": "56",
+          "source_line": 1964
+        },
+        {
+          "name": "SAFE_LISTENING_RET_PARAM",
+          "byte": 87,
+          "hex": "57",
+          "source_line": 1989
+        },
+        {
+          "name": "SAFE_LISTENING_SET_PARAM",
+          "byte": 88,
+          "hex": "58",
+          "source_line": 2014
+        },
+        {
+          "name": "SAFE_LISTENING_NTFY_PARAM",
+          "byte": 89,
+          "hex": "59",
+          "source_line": 2039
+        },
+        {
+          "name": "SAFE_LISTENING_GET_EXTENDED_PARAM",
+          "byte": 90,
+          "hex": "5A",
+          "source_line": 2064
+        },
+        {
+          "name": "SAFE_LISTENING_RET_EXTENDED_PARAM",
+          "byte": 91,
+          "hex": "5B",
+          "source_line": 2089
+        },
+        {
+          "name": "LEA_GET_CAPABILITY",
+          "byte": 96,
+          "hex": "60",
+          "source_line": 2110
+        },
+        {
+          "name": "LEA_RET_CAPABILITY",
+          "byte": 97,
+          "hex": "61",
+          "source_line": 2131
+        },
+        {
+          "name": "LEA_GET_STATUS",
+          "byte": 98,
+          "hex": "62",
+          "source_line": 2156
+        },
+        {
+          "name": "LEA_RET_STATUS",
+          "byte": 99,
+          "hex": "63",
+          "source_line": 2181
+        },
+        {
+          "name": "LEA_NTFY_STATUS",
+          "byte": 101,
+          "hex": "65",
+          "source_line": 2206
+        },
+        {
+          "name": "LEA_GET_PARAM",
+          "byte": 102,
+          "hex": "66",
+          "source_line": 2231
+        },
+        {
+          "name": "LEA_RET_PARAM",
+          "byte": 103,
+          "hex": "67",
+          "source_line": 2256
+        },
+        {
+          "name": "LEA_SET_PARAM",
+          "byte": 104,
+          "hex": "68",
+          "source_line": 2281
+        },
+        {
+          "name": "LEA_NTFY_PARAM",
+          "byte": 105,
+          "hex": "69",
+          "source_line": 2306
+        },
+        {
+          "name": "PARTY_GET_CAPABILITY",
+          "byte": 112,
+          "hex": "70",
+          "source_line": 2331
+        },
+        {
+          "name": "PARTY_RET_CAPABILITY",
+          "byte": 113,
+          "hex": "71",
+          "source_line": 2356
+        },
+        {
+          "name": "PARTY_GET_STATUS",
+          "byte": 114,
+          "hex": "72",
+          "source_line": 2381
+        },
+        {
+          "name": "PARTY_RET_STATUS",
+          "byte": 115,
+          "hex": "73",
+          "source_line": 2406
+        },
+        {
+          "name": "PARTY_SET_STATUS",
+          "byte": 116,
+          "hex": "74",
+          "source_line": 2431
+        },
+        {
+          "name": "PARTY_NTFY_STATUS",
+          "byte": 117,
+          "hex": "75",
+          "source_line": 2456
+        },
+        {
+          "name": "PARTY_GET_PARAM",
+          "byte": 118,
+          "hex": "76",
+          "source_line": 2481
+        },
+        {
+          "name": "PARTY_RET_PARAM",
+          "byte": 119,
+          "hex": "77",
+          "source_line": 2506
+        },
+        {
+          "name": "PARTY_SET_PARAM",
+          "byte": 120,
+          "hex": "78",
+          "source_line": 2531
+        },
+        {
+          "name": "PARTY_NTFY_PARAM",
+          "byte": 121,
+          "hex": "79",
+          "source_line": 2556
+        },
+        {
+          "name": "PARTY_SET_EXTENDED_PARAM",
+          "byte": 124,
+          "hex": "7C",
+          "source_line": 2581
+        },
+        {
+          "name": "PARTY_NTFY_EXTENDED_PARAM",
+          "byte": 125,
+          "hex": "7D",
+          "source_line": 2606
+        },
+        {
+          "name": "SYSTEM_GET_CAPABILITY",
+          "byte": 240,
+          "hex": "F0",
+          "source_line": 2631
+        },
+        {
+          "name": "SYSTEM_RET_CAPABILITY",
+          "byte": 241,
+          "hex": "F1",
+          "source_line": 2656
+        },
+        {
+          "name": "SYSTEM_GET_STATUS",
+          "byte": 242,
+          "hex": "F2",
+          "source_line": 2681
+        },
+        {
+          "name": "SYSTEM_RET_STATUS",
+          "byte": 243,
+          "hex": "F3",
+          "source_line": 2706
+        },
+        {
+          "name": "SYSTEM_SET_STATUS",
+          "byte": 244,
+          "hex": "F4",
+          "source_line": 2731
+        },
+        {
+          "name": "SYSTEM_NTFY_STATUS",
+          "byte": 245,
+          "hex": "F5",
+          "source_line": 2756
+        },
+        {
+          "name": "SYSTEM_GET_PARAM",
+          "byte": 246,
+          "hex": "F6",
+          "source_line": 2781
+        },
+        {
+          "name": "SYSTEM_RET_PARAM",
+          "byte": 247,
+          "hex": "F7",
+          "source_line": 2806
+        },
+        {
+          "name": "SYSTEM_SET_PARAM",
+          "byte": 248,
+          "hex": "F8",
+          "source_line": 2830
+        },
+        {
+          "name": "SYSTEM_NTFY_PARAM",
+          "byte": 249,
+          "hex": "F9",
+          "source_line": 2854
+        },
+        {
+          "name": "SYSTEM_GET_EXTENDED_PARAM",
+          "byte": 250,
+          "hex": "FA",
+          "source_line": 2878
+        },
+        {
+          "name": "SYSTEM_RET_EXTENDED_PARAM",
+          "byte": 251,
+          "hex": "FB",
+          "source_line": 2902
+        },
+        {
+          "name": "SYSTEM_SET_EXTENDED_PARAM",
+          "byte": 252,
+          "hex": "FC",
+          "source_line": 2926
+        },
+        {
+          "name": "SYSTEM_NTFY_EXTENDED_PARAM",
+          "byte": 253,
+          "hex": "FD",
+          "source_line": 2950
+        },
+        {
+          "name": "UNKNOWN",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 2974
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/Command.smali"
+    },
+    {
+      "sha256": "e29e8cc43de4d83ad8da6f153edd6915e62923d61174effa4082c46491940329",
+      "values": [
+        {
+          "name": "VIBRATOR",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 165
+        },
+        {
+          "name": "SMART_TALKING_MODE_TYPE1",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 188
+        },
+        {
+          "name": "ASSIGNABLE_SETTINGS",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 208
+        },
+        {
+          "name": "VOICE_ASSISTANT_SETTINGS",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 228
+        },
+        {
+          "name": "WEARING_STATUS_DETECTOR",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 248
+        },
+        {
+          "name": "EARPIECE_SELECTION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 271
+        },
+        {
+          "name": "CALL_SETTINGS",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 292
+        },
+        {
+          "name": "RESET_SETTINGS",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 313
+        },
+        {
+          "name": "AUTO_VOLUME",
+          "byte": 10,
+          "hex": "0A",
+          "source_line": 334
+        },
+        {
+          "name": "FACE_TAP_TEST_MODE",
+          "byte": 11,
+          "hex": "0B",
+          "source_line": 355
+        },
+        {
+          "name": "SMART_TALKING_MODE_TYPE2",
+          "byte": 12,
+          "hex": "0C",
+          "source_line": 376
+        },
+        {
+          "name": "QUICK_ACCESS",
+          "byte": 13,
+          "hex": "0D",
+          "source_line": 397
+        },
+        {
+          "name": "ASSIGNABLE_SETTINGS_WITH_LIMITATION",
+          "byte": 14,
+          "hex": "0E",
+          "source_line": 418
+        },
+        {
+          "name": "HEAD_GESTURE_ON_OFF",
+          "byte": 15,
+          "hex": "0F",
+          "source_line": 439
+        },
+        {
+          "name": "HEAD_GESTURE_TRAINING",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 460
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 480
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/system/param/SystemInquiredType.smali"
+    },
+    {
+      "sha256": "cf064bec1ff7577c6bd817c1ec52093a5f728fd69ebf2b2e5726a21b1e4c5177",
+      "values": [
+        {
+          "name": "OFF",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 129
+        },
+        {
+          "name": "ON_SINGLE",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 149
+        },
+        {
+          "name": "ON_DUAL",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 169
+        },
+        {
+          "name": "AUTO",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 189
+        },
+        {
+          "name": "AUTO_SINGLE",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 209
+        },
+        {
+          "name": "AUTO_DUAL",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 229
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 252
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/ncasm/param/NcValue.smali"
+    },
+    {
+      "sha256": "53760467fe76ca8d79185037d9d413c692779052bf516994002e07173abc2e22",
+      "values": [
+        {
+          "name": "UNDER_CHANGING",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 77
+        },
+        {
+          "name": "CHANGED",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 97
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 120
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/ncasm/param/ValueChangeStatus.smali"
+    },
+    {
+      "sha256": "9225d5937951ed9b21ddd51a593e70e674c208540d9e8915afed5fef527792ef",
+      "values": [
+        {
+          "name": "NC_ON_OFF",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 164
+        },
+        {
+          "name": "NC_ON_OFF_AND_ASM_ON_OFF",
+          "byte": 17,
+          "hex": "11",
+          "source_line": 185
+        },
+        {
+          "name": "NC_MODE_SWITCH_AND_ASM_ON_OFF",
+          "byte": 18,
+          "hex": "12",
+          "source_line": 209
+        },
+        {
+          "name": "NC_ON_OFF_AND_ASM_SEAMLESS",
+          "byte": 19,
+          "hex": "13",
+          "source_line": 233
+        },
+        {
+          "name": "NC_MODE_SWITCH_AND_ASM_SEAMLESS",
+          "byte": 20,
+          "hex": "14",
+          "source_line": 257
+        },
+        {
+          "name": "MODE_NC_ASM_AUTO_NC_MODE_SWITCH_AND_ASM_SEAMLESS",
+          "byte": 21,
+          "hex": "15",
+          "source_line": 281
+        },
+        {
+          "name": "MODE_NC_ASM_DUAL_SINGLE_NC_MODE_SWITCH_AND_ASM_SEAMLESS",
+          "byte": 22,
+          "hex": "16",
+          "source_line": 305
+        },
+        {
+          "name": "MODE_NC_ASM_DUAL_NC_MODE_SWITCH_AND_ASM_SEAMLESS",
+          "byte": 23,
+          "hex": "17",
+          "source_line": 329
+        },
+        {
+          "name": "MODE_NC_NCSS_ASM_DUAL_NC_MODE_SWITCH_AND_ASM_SEAMLESS",
+          "byte": 24,
+          "hex": "18",
+          "source_line": 354
+        },
+        {
+          "name": "MODE_NC_ASM_DUAL_NC_MODE_SWITCH_AND_ASM_SEAMLESS_NA",
+          "byte": 25,
+          "hex": "19",
+          "source_line": 379
+        },
+        {
+          "name": "ASM_ON_OFF",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 404
+        },
+        {
+          "name": "ASM_SEAMLESS",
+          "byte": 34,
+          "hex": "22",
+          "source_line": 429
+        },
+        {
+          "name": "NC_AMB_TOGGLE",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 454
+        },
+        {
+          "name": "NC_TEST_MODE",
+          "byte": 64,
+          "hex": "40",
+          "source_line": 479
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 503
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/ncasm/param/NcAsmInquiredType.smali"
+    },
+    {
+      "sha256": "c5ac35398e559d970fc7b4b95be6a547c66a360bb2b87c56600859fecdba8656",
+      "values": [
+        {
+          "name": "OFF",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 77
+        },
+        {
+          "name": "ON",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 97
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 120
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/ncasm/param/NcAsmOnOffValue.smali"
+    },
+    {
+      "sha256": "912bd04f065f8bd6937aeabaa59c7c0baa2ef7ae7bb76bff13774ca240c7db4f",
+      "values": [
+        {
+          "name": "NC",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 77
+        },
+        {
+          "name": "ASM",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 97
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 120
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/ncasm/param/NcAsmMode.smali"
+    },
+    {
+      "sha256": "a1e178a37072a669f200974f9b080a232c07067ed483a4efc9304a8e4f5c74b5",
+      "values": [
+        {
+          "name": "FIXED_VALUE",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 73
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 96
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/connect/param/ConnectInquiredType.smali"
+    },
+    {
+      "sha256": "0a429fd5a4b3ee531ab05e760cdefb4f1ee4659f3266a0b96b1c8a3def17498a",
+      "values": [
+        {
+          "name": "CONCIERGE",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 145
+        },
+        {
+          "name": "CONNECTION_STATUS",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 165
+        },
+        {
+          "name": "AUDIO_CODEC",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 185
+        },
+        {
+          "name": "UPSCALING_EFFECT",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 205
+        },
+        {
+          "name": "BLE_SETUP",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 225
+        },
+        {
+          "name": "CONNECTION_ESTABLISHED_TIME",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 245
+        },
+        {
+          "name": "DEVICE_SPECIAL_MODE",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 265
+        },
+        {
+          "name": "SMART_PHONE_AND_CONNECTED_DEVICE_INFORMATION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 285
+        },
+        {
+          "name": "TANDEM_RECONNECTION_REQUEST",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 306
+        },
+        {
+          "name": "DISPLAY_FW_VERSION",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 327
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 351
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/common/param/CommonInquiredType.smali"
+    },
+    {
+      "sha256": "800cb42641c6591b552ba7ad71d2bfa9a88d323a6c6d44d56367c38b02b23cea",
+      "values": [
+        {
+          "name": "BATTERY",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 165
+        },
+        {
+          "name": "LEFT_RIGHT_BATTERY",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 185
+        },
+        {
+          "name": "CRADLE_BATTERY",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 205
+        },
+        {
+          "name": "POWER_OFF",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 225
+        },
+        {
+          "name": "AUTO_POWER_OFF",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 245
+        },
+        {
+          "name": "AUTO_POWER_OFF_WEARING_DETECTION",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 265
+        },
+        {
+          "name": "POWER_SAVE_MODE",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 285
+        },
+        {
+          "name": "LINK_CONTROL",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 305
+        },
+        {
+          "name": "BATTERY_WITH_THRESHOLD",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 326
+        },
+        {
+          "name": "LR_BATTERY_WITH_THRESHOLD",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 347
+        },
+        {
+          "name": "CRADLE_BATTERY_WITH_THRESHOLD",
+          "byte": 10,
+          "hex": "0A",
+          "source_line": 368
+        },
+        {
+          "name": "BATTERY_SAFE_MODE",
+          "byte": 11,
+          "hex": "0B",
+          "source_line": 389
+        },
+        {
+          "name": "CARING_CHARGE",
+          "byte": 12,
+          "hex": "0C",
+          "source_line": 410
+        },
+        {
+          "name": "STAMINA",
+          "byte": 14,
+          "hex": "0E",
+          "source_line": 435
+        },
+        {
+          "name": "AUTOMATIC_TOUCH_PANEL_BACKLIGHT_TURN_OFF",
+          "byte": 15,
+          "hex": "0F",
+          "source_line": 456
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 476
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/power/param/PowerInquiredType.smali"
+    },
+    {
+      "sha256": "85eaad477656f52f696a346c86bd09e70b6cec955960f6d12fa763494ee085eb",
+      "values": [
+        {
+          "name": "TWS_SUPPORTS_LEA_UNI_LEA_BROAD",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 160
+        },
+        {
+          "name": "BGM_MODE_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 245,
+          "hex": "F5",
+          "source_line": 184
+        },
+        {
+          "name": "HEAD_TRACKER_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 246,
+          "hex": "F6",
+          "source_line": 205
+        },
+        {
+          "name": "PAIRING_DEVICE_MANAGEMENT_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 247,
+          "hex": "F7",
+          "source_line": 229
+        },
+        {
+          "name": "SOUND_AR_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 248,
+          "hex": "F8",
+          "source_line": 252
+        },
+        {
+          "name": "AUTO_PLAY_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 249,
+          "hex": "F9",
+          "source_line": 275
+        },
+        {
+          "name": "GATT_CONNECTABLE_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 250,
+          "hex": "FA",
+          "source_line": 298
+        },
+        {
+          "name": "SOUND_AR_OPTIMIZATION_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 251,
+          "hex": "FB",
+          "source_line": 321
+        },
+        {
+          "name": "QUICK_ACCESS_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 252,
+          "hex": "FC",
+          "source_line": 345
+        },
+        {
+          "name": "CONNECTION_MODE_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 253,
+          "hex": "FD",
+          "source_line": 369
+        },
+        {
+          "name": "VOICE_ASSISTANT_SETTINGS_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 254,
+          "hex": "FE",
+          "source_line": 393
+        },
+        {
+          "name": "VOICE_ASSISTANT_WAKE_WORD_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 417
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 11,
+          "hex": "0B",
+          "source_line": 438
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/lea/param/LEAInquiredType.smali"
+    },
+    {
+      "sha256": "b19f2ad7f34d2d1a717e4da16f0ed08fd382cf8524119ed84f2dc617dd53306f",
+      "values": [
+        {
+          "name": "PLAYBACK_CONTROL_WITH_CALL_VOLUME_ADJUSTMENT",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 140
+        },
+        {
+          "name": "PLAYBACK_CONTROL_WITH_CALL_VOLUME_ADJUSTMENT_AND_FUNCTION_CHANGE",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 160
+        },
+        {
+          "name": "PLAYBACK_CONTROL_WITH_FUNCTION_CHANGE",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 180
+        },
+        {
+          "name": "MUSIC_VOLUME",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 201
+        },
+        {
+          "name": "CALL_VOLUME",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 225
+        },
+        {
+          "name": "MUSIC_VOLUME_WITH_MUTE",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 249
+        },
+        {
+          "name": "CALL_VOLUME_WITH_MUTE",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 273
+        },
+        {
+          "name": "PLAY_MODE",
+          "byte": 64,
+          "hex": "40",
+          "source_line": 297
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 321
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/playback/param/PlayInquiredType.smali"
+    },
+    {
+      "sha256": "6477d2d606a454ac78bd54a95604aeff8de1e1a4abf0e1a3a632c1b817c6825d",
+      "values": [
+        {
+          "name": "FIXED_MESSAGE",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 133
+        },
+        {
+          "name": "VIBRATOR_ALERT_NOTIFICATION",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 153
+        },
+        {
+          "name": "FIXED_MESSAGE_WITH_LEFT_RIGHT_SELECTION",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 173
+        },
+        {
+          "name": "VOICE_ASSISTANT_ALERT_NOTIFICATION",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 193
+        },
+        {
+          "name": "APP_BECOMES_FOREGROUND",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 213
+        },
+        {
+          "name": "LE_AUDIO_ALERT_NOTIFICATION",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 233
+        },
+        {
+          "name": "FLEXIBLE_MESSAGE",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 253
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 276
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/alert/param/AlertInquiredType.smali"
+    },
+    {
+      "sha256": "eb453692e1b98d9ff5b5c7a3a64750d8bc9989abd905c8ca05b9e8bd2ac166ca",
+      "values": [
+        {
+          "name": "CONNECTION_MODE",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 153
+        },
+        {
+          "name": "UPSCALING",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 173
+        },
+        {
+          "name": "CONNECTION_MODE_WITH_LDAC_STATUS",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 193
+        },
+        {
+          "name": "BGM_MODE",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 213
+        },
+        {
+          "name": "UPMIX_CINEMA",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 233
+        },
+        {
+          "name": "CONNECTION_MODE_CLASSIC_AUDIO_LE_AUDIO",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 253
+        },
+        {
+          "name": "VOICE_CONTENTS",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 273
+        },
+        {
+          "name": "SOUND_LEAKAGE_REDUCTION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 293
+        },
+        {
+          "name": "LISTENING_OPTION_ASSIGN_CUSTOMIZABLE",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 314
+        },
+        {
+          "name": "BGM_MODE_AND_ERRORCODE",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 335
+        },
+        {
+          "name": "UPMIX_SERIES",
+          "byte": 10,
+          "hex": "0A",
+          "source_line": 356
+        },
+        {
+          "name": "UPSCALING_AUTO_OFF_WITH_STATUS_DISABLE_REASON",
+          "byte": 11,
+          "hex": "0B",
+          "source_line": 377
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 401
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/audio/param/AudioInquiredType.smali"
+    },
+    {
+      "sha256": "7bab9d1da80912b3fa3457dc53b034bfc4ac2b80b303315d4d55a6cd3eb13055",
+      "values": [
+        {
+          "name": "ACTION_LOG_NOTIFIER",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 81
+        },
+        {
+          "name": "TIME_SERIES_OPERATIONLOG_NOTIFIER",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 101
+        },
+        {
+          "name": "SOUND_DROPOUT_NOTIFIER",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 121
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 144
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/log/param/LogInquiredType.smali"
+    },
+    {
+      "sha256": "f55464ce9df6b0cabf2b90a32efd01db9f4ef11e43b7e684c7856c3f28804669",
+      "values": [
+        {
+          "name": "NC_OPTIMIZER_PERSONAL_BAROMETRIC",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 125
+        },
+        {
+          "name": "NC_OPTIMIZER_PERSONAL",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 145
+        },
+        {
+          "name": "NC_OPTIMIZER_BAROMETRIC",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 165
+        },
+        {
+          "name": "SOUND_FIELD_OPTIMIZATION",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 189
+        },
+        {
+          "name": "TV_SOUND_BOOSTER",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 213
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 236
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/opt/param/OptInquiredType.smali"
+    },
+    {
+      "sha256": "db714ea983af3bdfd40c1131d847b5a6345aba88deef11c09452841158ab7356",
+      "values": [
+        {
+          "name": "ENTER_FW_UPDATE_MODE",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 182
+        },
+        {
+          "name": "EXIT_FW_UPDATE_MODE",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 218
+        },
+        {
+          "name": "START_TRANSFER",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 258
+        },
+        {
+          "name": "FINISH_TRANSFER",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 294
+        },
+        {
+          "name": "CANCEL_TRANSFER",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 330
+        },
+        {
+          "name": "EXECUTE_FW_UPDATE",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 370
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 398
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/updt/param/TandemFotaCommand.smali"
+    },
+    {
+      "sha256": "416a2118a12f9e04aef5f4237497888a2a2224509a549a262d195d12b8f4b4d4",
+      "values": [
+        {
+          "name": "FW_UPDATE_MTK_TRANSFER_WO_DISCONNECTION",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 144
+        },
+        {
+          "name": "FW_UPDATE_MTK_TRANSFER_WO_DISCONNECTION_AUTO_UPDATE",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 167
+        },
+        {
+          "name": "FW_UPDATE_MTK_TRANSFER_WITH_REPAIR_MODE",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 187
+        },
+        {
+          "name": "FW_UPDATE_MTK_TRANSFER_WITH_AC_CONNECTION_CHECK",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 210
+        },
+        {
+          "name": "FW_UPDATE_USING_MC_APP",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 230
+        },
+        {
+          "name": "FW_UPDATE_TANDEM_PART1",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 251
+        },
+        {
+          "name": "FW_UPDATE_TANDEM_PART2",
+          "byte": 17,
+          "hex": "11",
+          "source_line": 272
+        },
+        {
+          "name": "FW_UPDATE_TANDEM_PART3",
+          "byte": 18,
+          "hex": "12",
+          "source_line": 293
+        },
+        {
+          "name": "FW_UPDATE_TANDEM_PART4",
+          "byte": 19,
+          "hex": "13",
+          "source_line": 318
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 342
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/updt/param/UpdtInquiredType.smali"
+    },
+    {
+      "sha256": "449594ab8f4736dc885442d1733540ce7c144e9ea5fe4e3711ed01fa46b97f88",
+      "values": [
+        {
+          "name": "GENERAL_SETTING1",
+          "byte": 209,
+          "hex": "D1",
+          "source_line": 91
+        },
+        {
+          "name": "GENERAL_SETTING2",
+          "byte": 210,
+          "hex": "D2",
+          "source_line": 115
+        },
+        {
+          "name": "GENERAL_SETTING3",
+          "byte": 211,
+          "hex": "D3",
+          "source_line": 139
+        },
+        {
+          "name": "GENERAL_SETTING4",
+          "byte": 212,
+          "hex": "D4",
+          "source_line": 163
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 186
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/generalsetting/param/GsInquiredType.smali"
+    },
+    {
+      "sha256": "324713ee999a87cabe541d0cdabed3c903be914769a46cbd4ae1ead11a470f82",
+      "values": [
+        {
+          "name": "NO_INFORMATION",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 81
+        },
+        {
+          "name": "HZ",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 101
+        },
+        {
+          "name": "KHZ",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 121
+        },
+        {
+          "name": "SPECIFIC_INFORMATION",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 145
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/eqebb/param/EqBandInformationType.smali"
+    },
+    {
+      "sha256": "90bdd08689e64653abbc439eece868969dbc5e9482eee185ae93492841c6c212",
+      "values": [
+        {
+          "name": "OFF",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 424
+        },
+        {
+          "name": "ROCK",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 444
+        },
+        {
+          "name": "POP",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 464
+        },
+        {
+          "name": "JAZZ",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 484
+        },
+        {
+          "name": "DANCE",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 504
+        },
+        {
+          "name": "EDM",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 524
+        },
+        {
+          "name": "R_AND_B_HIP_HOP",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 544
+        },
+        {
+          "name": "ACOUSTIC",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 564
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO8",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 585
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO9",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 606
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO10",
+          "byte": 10,
+          "hex": "0A",
+          "source_line": 627
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO11",
+          "byte": 11,
+          "hex": "0B",
+          "source_line": 648
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO12",
+          "byte": 12,
+          "hex": "0C",
+          "source_line": 669
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO13",
+          "byte": 13,
+          "hex": "0D",
+          "source_line": 690
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO14",
+          "byte": 14,
+          "hex": "0E",
+          "source_line": 711
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO15",
+          "byte": 15,
+          "hex": "0F",
+          "source_line": 732
+        },
+        {
+          "name": "BRIGHT",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 753
+        },
+        {
+          "name": "EXCITED",
+          "byte": 17,
+          "hex": "11",
+          "source_line": 774
+        },
+        {
+          "name": "MELLOW",
+          "byte": 18,
+          "hex": "12",
+          "source_line": 795
+        },
+        {
+          "name": "RELAXED",
+          "byte": 19,
+          "hex": "13",
+          "source_line": 816
+        },
+        {
+          "name": "VOCAL",
+          "byte": 20,
+          "hex": "14",
+          "source_line": 837
+        },
+        {
+          "name": "TREBLE",
+          "byte": 21,
+          "hex": "15",
+          "source_line": 858
+        },
+        {
+          "name": "BASS",
+          "byte": 22,
+          "hex": "16",
+          "source_line": 883
+        },
+        {
+          "name": "SPEECH",
+          "byte": 23,
+          "hex": "17",
+          "source_line": 908
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO24",
+          "byte": 24,
+          "hex": "18",
+          "source_line": 933
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO25",
+          "byte": 25,
+          "hex": "19",
+          "source_line": 958
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO26",
+          "byte": 26,
+          "hex": "1A",
+          "source_line": 983
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO27",
+          "byte": 27,
+          "hex": "1B",
+          "source_line": 1008
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO28",
+          "byte": 28,
+          "hex": "1C",
+          "source_line": 1033
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO29",
+          "byte": 29,
+          "hex": "1D",
+          "source_line": 1058
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO30",
+          "byte": 30,
+          "hex": "1E",
+          "source_line": 1083
+        },
+        {
+          "name": "RESERVED_FOR_FUTURE_NO31",
+          "byte": 31,
+          "hex": "1F",
+          "source_line": 1108
+        },
+        {
+          "name": "GAMING_EQ",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 1133
+        },
+        {
+          "name": "FPS_1",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 1158
+        },
+        {
+          "name": "FPS_2",
+          "byte": 34,
+          "hex": "22",
+          "source_line": 1183
+        },
+        {
+          "name": "FPS_3",
+          "byte": 35,
+          "hex": "23",
+          "source_line": 1208
+        },
+        {
+          "name": "HEAVY",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 1233
+        },
+        {
+          "name": "CLEAR",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 1258
+        },
+        {
+          "name": "HARD",
+          "byte": 50,
+          "hex": "32",
+          "source_line": 1283
+        },
+        {
+          "name": "SOFT",
+          "byte": 51,
+          "hex": "33",
+          "source_line": 1308
+        },
+        {
+          "name": "CUSTOM",
+          "byte": 160,
+          "hex": "A0",
+          "source_line": 1333
+        },
+        {
+          "name": "USER_SETTING1",
+          "byte": 161,
+          "hex": "A1",
+          "source_line": 1358
+        },
+        {
+          "name": "USER_SETTING2",
+          "byte": 162,
+          "hex": "A2",
+          "source_line": 1383
+        },
+        {
+          "name": "USER_SETTING3",
+          "byte": 163,
+          "hex": "A3",
+          "source_line": 1408
+        },
+        {
+          "name": "USER_SETTING4",
+          "byte": 164,
+          "hex": "A4",
+          "source_line": 1433
+        },
+        {
+          "name": "USER_SETTING5",
+          "byte": 165,
+          "hex": "A5",
+          "source_line": 1458
+        },
+        {
+          "name": "ARTIST_COLLAB1",
+          "byte": 176,
+          "hex": "B0",
+          "source_line": 1483
+        },
+        {
+          "name": "ARTIST_COLLAB2",
+          "byte": 177,
+          "hex": "B1",
+          "source_line": 1508
+        },
+        {
+          "name": "ARTIST_COLLAB3",
+          "byte": 178,
+          "hex": "B2",
+          "source_line": 1533
+        },
+        {
+          "name": "ARTIST_COLLAB4",
+          "byte": 179,
+          "hex": "B3",
+          "source_line": 1558
+        },
+        {
+          "name": "ARTIST_COLLAB5",
+          "byte": 180,
+          "hex": "B4",
+          "source_line": 1583
+        },
+        {
+          "name": "ARTIST_COLLAB6",
+          "byte": 181,
+          "hex": "B5",
+          "source_line": 1608
+        },
+        {
+          "name": "ARTIST_COLLAB7",
+          "byte": 182,
+          "hex": "B6",
+          "source_line": 1633
+        },
+        {
+          "name": "ARTIST_COLLAB8",
+          "byte": 183,
+          "hex": "B7",
+          "source_line": 1658
+        },
+        {
+          "name": "ARTIST_COLLAB9",
+          "byte": 184,
+          "hex": "B8",
+          "source_line": 1683
+        },
+        {
+          "name": "ARTIST_COLLAB10",
+          "byte": 185,
+          "hex": "B9",
+          "source_line": 1708
+        },
+        {
+          "name": "ARTIST_COLLAB11",
+          "byte": 186,
+          "hex": "BA",
+          "source_line": 1733
+        },
+        {
+          "name": "ARTIST_COLLAB12",
+          "byte": 187,
+          "hex": "BB",
+          "source_line": 1758
+        },
+        {
+          "name": "UNSPECIFIED",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 1782
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/eqebb/param/EqPresetId.smali"
+    },
+    {
+      "sha256": "c0173d3fbbe17d60d77ddb472c27faa9bd021c8ecf890633b1affed0a602adc6",
+      "values": [
+        {
+          "name": "PRESET_EQ",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 157
+        },
+        {
+          "name": "EBB",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 177
+        },
+        {
+          "name": "PRESET_EQ_NONCUSTOMIZABLE",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 197
+        },
+        {
+          "name": "PRESET_EQ_AND_ULT_MODE",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 217
+        },
+        {
+          "name": "PRESET_EQ_AND_ERRORCODE",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 237
+        },
+        {
+          "name": "SOUND_EFFECT",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 261
+        },
+        {
+          "name": "CUSTOM_EQ",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 285
+        },
+        {
+          "name": "TURN_KEY_EQ",
+          "byte": 50,
+          "hex": "32",
+          "source_line": 309
+        },
+        {
+          "name": "CUSTOMIZABLE_SOUND_EFFECT_SELECT",
+          "byte": 51,
+          "hex": "33",
+          "source_line": 334
+        },
+        {
+          "name": "CUSTOMIZABLE_SOUND_EFFECT_RESET",
+          "byte": 52,
+          "hex": "34",
+          "source_line": 359
+        },
+        {
+          "name": "CUSTOMIZABLE_SOUND_EFFECT_CUSTOM",
+          "byte": 53,
+          "hex": "35",
+          "source_line": 384
+        },
+        {
+          "name": "CUSTOMIZABLE_SOUND_EFFECT_EXTERNAL_UPDATE",
+          "byte": 54,
+          "hex": "36",
+          "source_line": 409
+        },
+        {
+          "name": "ULT_BTN_SOUND_EFFECT_ASSIGN",
+          "byte": 64,
+          "hex": "40",
+          "source_line": 434
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 458
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/eqebb/param/EqEbbInquiredType.smali"
+    },
+    {
+      "sha256": "83760e53ab656909ea9ca6d98cd38bf46c50f658b8f081c0332edb43acd7d47d",
+      "values": [
+        {
+          "name": "SAR",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 129
+        },
+        {
+          "name": "AUTO_PLAY",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 149
+        },
+        {
+          "name": "INTEGRATED_AUTO_PLAY",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 169
+        },
+        {
+          "name": "GATT_CONNECTABLE",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 193
+        },
+        {
+          "name": "SAR_OPTIMIZATION_COMPASS_ACCEL_TYPE",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 217
+        },
+        {
+          "name": "SAR_OPTIMIZATION_ACCEL_TYPE",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 241
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 264
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/sarautoplay/param/SARAutoPlayInquiredType.smali"
+    },
+    {
+      "sha256": "ebaf1d6458ec2fdf8003837bcdc64a14d332c0e26a85116cdf1ac17780bfc6ae",
+      "values": [
+        {
+          "name": "ADAPTIVE_CONTROL",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 77
+        },
+        {
+          "name": "ADAPTIVE_CONTROL_WITH_PARAMETER_NOTIFICATION",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 97
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 120
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table1/sense/param/SenseInquiredType.smali"
+    },
+    {
+      "sha256": "23d7d12d50db3111518891db6e542cf92dc0dcef2f4c3fcd74453e7684114d59",
+      "values": [
+        {
+          "name": "BROWSE_DIRECTORIES",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 81
+        },
+        {
+          "name": "BROWSE_FILES",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 101
+        },
+        {
+          "name": "PLAY_ITEM",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 121
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 144
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/system/param/UsbBrowserCommand.smali"
+    },
+    {
+      "sha256": "bc9b59fae8f3a2ececd09f0a85ad143fd3a5abbdc57e458073ca806a8c8008b8",
+      "values": [
+        {
+          "name": "WEARING_STATUS_CHECKER",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 173
+        },
+        {
+          "name": "REPEAT_TAP_TRAINING_MODE",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 193
+        },
+        {
+          "name": "QUICK_ACCESS_EASY_SETTING",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 213
+        },
+        {
+          "name": "AUTO_VOLUME_OPTIMIZER",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 233
+        },
+        {
+          "name": "AUTO_VOLUME_WITH_LIMITATION",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 253
+        },
+        {
+          "name": "SONY_VOICE_ASSISTANT_SETTING_MTK_TRANSFER_SUPPORT_LANGUAGE_SWITCH",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 273
+        },
+        {
+          "name": "SONY_VOICE_ASSISTANT_COMMAND",
+          "byte": 6,
+          "hex": "06",
+          "source_line": 293
+        },
+        {
+          "name": "WEARING_DEVICE_INFORMATION",
+          "byte": 7,
+          "hex": "07",
+          "source_line": 313
+        },
+        {
+          "name": "WEARING_POSITION_JUDGMENT_BY_SENSOR",
+          "byte": 8,
+          "hex": "08",
+          "source_line": 334
+        },
+        {
+          "name": "LINK_AUTO_SWITCH_FOR_SPEAKER",
+          "byte": 9,
+          "hex": "09",
+          "source_line": 355
+        },
+        {
+          "name": "LINK_AUTO_SWITCH_FOR_HEADSETS",
+          "byte": 10,
+          "hex": "0A",
+          "source_line": 376
+        },
+        {
+          "name": "FUNCTION_CHANGE",
+          "byte": 12,
+          "hex": "0C",
+          "source_line": 401
+        },
+        {
+          "name": "USB_BROWSER",
+          "byte": 13,
+          "hex": "0D",
+          "source_line": 422
+        },
+        {
+          "name": "LIGHTING_MODE",
+          "byte": 14,
+          "hex": "0E",
+          "source_line": 443
+        },
+        {
+          "name": "VOICE_ASSISTANT_WITH_SPECIFIC_SETUP_LINK_SUPPORT",
+          "byte": 15,
+          "hex": "0F",
+          "source_line": 464
+        },
+        {
+          "name": "LIGHTING_DEFAULT_COLOR_COLOR_TYPE",
+          "byte": 16,
+          "hex": "10",
+          "source_line": 485
+        },
+        {
+          "name": "LIGHTING_DEFAULT_COLOR_CUSTOM_COLOR",
+          "byte": 17,
+          "hex": "11",
+          "source_line": 506
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 526
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/system/param/SystemInquiredType.smali"
+    },
+    {
+      "sha256": "e598fe466259867b94e73144c1d805895b141fd6316099f809b727e450c59e54",
+      "values": [
+        {
+          "name": "MTK_TRANSFER_WO_DISCONNECTION_NOT_SUPPORT_LANGUAGE_SWITCH",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 141
+        },
+        {
+          "name": "MTK_TRANSFER_WO_DISCONNECTION_SUPPORT_LANGUAGE_SWITCH",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 161
+        },
+        {
+          "name": "SUPPORT_LANGUAGE_SWITCH",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 181
+        },
+        {
+          "name": "ONLY_ON_OFF_SETTING",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 201
+        },
+        {
+          "name": "VOLUME",
+          "byte": 32,
+          "hex": "20",
+          "source_line": 225
+        },
+        {
+          "name": "VOLUME_SETTING_FIXED_TO_5_STEPS",
+          "byte": 33,
+          "hex": "21",
+          "source_line": 249
+        },
+        {
+          "name": "BATTERY_LV_VOICE",
+          "byte": 48,
+          "hex": "30",
+          "source_line": 273
+        },
+        {
+          "name": "POWER_ONOFF_SOUND",
+          "byte": 49,
+          "hex": "31",
+          "source_line": 297
+        },
+        {
+          "name": "SOUNDEFFECT_ULT_BEEP_ONOFF",
+          "byte": 50,
+          "hex": "32",
+          "source_line": 322
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 346
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/voiceguidance/param/VoiceGuidanceInquiredType.smali"
+    },
+    {
+      "sha256": "4aa509b53f92c57180602ad467078d4f5b4372e19333ef93bd20d7a2a81f3bf4",
+      "values": [
+        {
+          "name": "FIXED_VALUE",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 73
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 96
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/connect/param/ConnectInquiredType.smali"
+    },
+    {
+      "sha256": "3100b5d8deeea28d9c4f3c4fde893a180283b62e816ffa0d68936e545e53120c",
+      "values": [
+        {
+          "name": "AUTO_STANDBY",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 81
+        },
+        {
+          "name": "CARING_CHARGE_WITH_THRESHOLD",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 101
+        },
+        {
+          "name": "USB_SUBMERSION",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 121
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 144
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/power/param/PowerInquiredType.smali"
+    },
+    {
+      "sha256": "42c85d1c9a08994aa140564eaca79e4e8616d030fa029e673c2357de1e6c8ff9",
+      "values": [
+        {
+          "name": "LE_AUDIO_CONNECTION_MODE_WITH_BT_RECONNECTION",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 84
+        },
+        {
+          "name": "LINK_AUTO_SWITCH_CANT_BE_USED_WITH_LEA_CONNECTION",
+          "byte": 254,
+          "hex": "FE",
+          "source_line": 107
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 127
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/lea/param/LEAInquiredType.smali"
+    },
+    {
+      "sha256": "1ba71eb9fde57cad7ed5c45cd5a9a4c1887f7451095addc62e51a52e3a035cfd",
+      "values": [
+        {
+          "name": "SAFE_LISTENING_HBS_1",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 131
+        },
+        {
+          "name": "SAFE_LISTENING_TWS_1",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 151
+        },
+        {
+          "name": "SAFE_LISTENING_HBS_2",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 171
+        },
+        {
+          "name": "SAFE_LISTENING_TWS_2",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 191
+        },
+        {
+          "name": "SAFE_VOLUME_CONTROL",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 211
+        },
+        {
+          "name": "MAX_VOL_LV_LIMIT",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 231
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 254
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/safelistening/type/SafeListeningInquiredType.smali"
+    },
+    {
+      "sha256": "f4e6715f52babae4cbbecfa983db537577e0dcd450c33c8b50888c0f7fd3b747",
+      "values": [
+        {
+          "name": "DJ_CONTROL",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 129
+        },
+        {
+          "name": "ILLUMINATION",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 149
+        },
+        {
+          "name": "KARAOKE",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 169
+        },
+        {
+          "name": "DJ_CONTROL_WITH_STATUS_DISABLE_REASON",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 189
+        },
+        {
+          "name": "KARAOKE_WITH_STATUS_DISABLE_REASON",
+          "byte": 4,
+          "hex": "04",
+          "source_line": 209
+        },
+        {
+          "name": "LIVE_KARAOKE",
+          "byte": 5,
+          "hex": "05",
+          "source_line": 229
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 252
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/party/param/PartyInquiredType.smali"
+    },
+    {
+      "sha256": "198f06ec844692afe494c68dc819249909d42cc1de4a90b7f9bac0666a6c838f",
+      "values": [
+        {
+          "name": "PAIRING_DEVICE_MANAGEMENT_CLASSIC_BT",
+          "byte": 0,
+          "hex": "00",
+          "source_line": 85
+        },
+        {
+          "name": "SOURCE_SWITCH_CONTROL",
+          "byte": 1,
+          "hex": "01",
+          "source_line": 105
+        },
+        {
+          "name": "PAIRING_DEVICE_MANAGEMENT_WITH_BLUETOOTH_CLASS_OF_DEVICE",
+          "byte": 2,
+          "hex": "02",
+          "source_line": 125
+        },
+        {
+          "name": "MUSIC_HAND_OVER_SETTING",
+          "byte": 3,
+          "hex": "03",
+          "source_line": 145
+        },
+        {
+          "name": "OUT_OF_RANGE",
+          "byte": 255,
+          "hex": "FF",
+          "source_line": 168
+        }
+      ],
+      "source_path": "classes4/com/sony/songpal/tandemfamily/message/mdr/v2/table2/peripheral/param/PeripheralInquiredType.smali"
+    }
+  ],
+  "extraction_evidence_id": "ev_b7012e9c29bd46abd87737c4c5e83adbcd9d437c9e2af437279de497abea06b0"
+}

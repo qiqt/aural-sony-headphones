@@ -22,9 +22,7 @@ installation without them fails at `find_package`.
 The default controller test build also requires `Qt6::Test`.
 
 The commands below use `C:/Qt` as an example installation path. Substitute your
-actual Qt location. The October verification used
-`C:/Users/User/.cache/aural-qt/6.8.3/msvc2022_64` and fresh
-`build/verify-20261020-engine` / `build/verify-20261020-qt` output directories.
+actual Qt location.
 
 ## Configure and build
 

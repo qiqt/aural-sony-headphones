@@ -9,12 +9,10 @@ The research used the Sony Sound Connect 13.3.0 disassembly in the REA-Linux VM.
 Python scripts read the smali files; the Android app wasn't run.
 
 Input APKS SHA-256: `7901e52cf38c5ebd0d5be760e2b105df7ed7ab85c8e732dd4481c910f8fda31e`.
-VM root: `/home/joe/analysis/sony-13.3.0/smali/classes4` unless otherwise stated.
 The package signature hasn't been checked.
 
-Raw evidence and readable extracts are under
-`C:/Users/User/Documents/ChatGPT/Reverse Engineer/sony-evidence` and its parent.
-Evidence IDs below link findings to the disassembled classes.
+The [research sources](docs/protocol-research.md) explain the extraction process
+and the fields in the published catalog. Evidence IDs identify saved REA records.
 
 ## Protocol selection
 
@@ -136,8 +134,8 @@ not be sent through the V2 service. Available features vary by model and firmwar
 
 Evidence for enum values: `ev_b7012e9c29bd46abd87737c4c5e83adbcd9d437c9e2af437279de497abea06b0`.
 The [V2 catalog](docs/sony-v2-byte-catalog.json) contains source hashes and
-instruction lines; the original is retained in the lab. Do not derive SET payloads solely from that enum catalog:
-serializers and capability constraints are required as well.
+source lines. Building SET payloads also requires the serializer layouts and
+the device's supported options.
 
 Serializer evidence: `ev_f5a63be6a18dcf40471379cacdf828d34e61ff711b267d1ca7b6dabaf363fb7a`
 and `ev_9af771f6438111123c5c1e618c41b562f40233e8514eb9cd965f3fe5779eb2e6`.

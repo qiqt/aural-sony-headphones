@@ -47,6 +47,9 @@ __pycache__/
 Thumbs.db
 
 # Local research and captures
-/docs/
+/docs/*
+!/docs/screenshots/
+!/docs/sony-v2-byte-catalog.json
+!/docs/protocol-research.md
 .env
 .env.*

@@ -1,9 +1,8 @@
 # Sony V1 protocol
 
 These notes describe the Sony Tandem V1 (MDR) messages Aural sends and reads.
-Related references are the vault note
-*Sony Sound Connect 13.3.0 – Protocol Findings* and the reference implementation in
-`protocol-reference/xm4_remaining.py`.
+See [research sources](docs/protocol-research.md) for the Sony app analysis and
+[the V2 notes](PROTOCOL-MULTIMODEL.md) for newer models.
 
 ## Sources and testing
 
