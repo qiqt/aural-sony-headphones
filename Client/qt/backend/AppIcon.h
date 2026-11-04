@@ -8,5 +8,6 @@ namespace AppIcon {
 
 // state: true = a device is connected (brand colour), false = idle (muted colour).
 QIcon headset(bool connected);
+QIcon battery(int percentage);
 
 } // namespace AppIcon
