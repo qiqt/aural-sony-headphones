@@ -132,3 +132,57 @@ TEST(transport_data_arriving_while_a_sender_waits_for_its_ack_is_still_handled)
 	sender.join();
 	CHECK_EQ(threw.load(), false);
 }
+
+TEST(transport_service_discovery_overrides_name_fallback_and_prefers_v2)
+{
+    EngineFixture f;
+    f.fake().setSonyServices(true, true);
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    CHECK(f.bt.getProtocol() == SonyProtocol::V2);
+    CHECK(f.fake().lastProtocol() == SonyProtocol::V2);
+    CHECK(f.bt.protocolDiscovered());
+    f.bt.disconnect();
+    f.fake().setSonyServices(true, false);
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V2);
+    CHECK(f.bt.getProtocol() == SonyProtocol::V1);
+    CHECK(f.fake().lastProtocol() == SonyProtocol::V1);
+    CHECK(f.bt.protocolDiscovered());
+}
+
+TEST(transport_inconclusive_discovery_uses_explicit_fallback_and_clears_source)
+{
+    EngineFixture f;
+    f.fake().setSonyServices(false, true);
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    CHECK(f.bt.protocolDiscovered());
+    f.bt.disconnect();
+    f.fake().setSonyServices(false, false);
+    f.bt.connect("AA:BB:CC:DD:EE:FF", SonyProtocol::V1);
+    CHECK(f.bt.getProtocol() == SonyProtocol::V1);
+    CHECK(!f.bt.protocolDiscovered());
+    f.bt.disconnect();
+    f.bt.connect("AA:BB:CC:DD:EE:FF", SonyProtocol::V2);
+    CHECK(f.bt.getProtocol() == SonyProtocol::V2);
+    CHECK(!f.bt.protocolDiscovered());
+    CHECK(f.fake().sentCommands().empty()); // discovery itself sends no protocol commands
+}
+
+TEST(transport_cancel_during_service_discovery_does_not_open_a_socket)
+{
+    EngineFixture f;
+    f.fake().setSonyServices(false, true);
+    f.fake().blockServiceDiscovery();
+    std::atomic<bool> cancelled{false};
+    std::thread attempt([&] {
+        try { f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1); }
+        catch (const RecoverableException&) { cancelled = true; }
+    });
+    const bool started = testing::waitFor([&] { return f.fake().serviceLookups() > 0; });
+    f.bt.disconnect();
+    attempt.join();
+    CHECK(started);
+    CHECK(cancelled.load());
+    CHECK_EQ(f.fake().connectAttempts(), 0);
+    CHECK(!f.bt.isConnected());
+    CHECK(!f.bt.protocolDiscovered());
+}

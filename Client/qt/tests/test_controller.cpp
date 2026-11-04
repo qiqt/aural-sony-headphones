@@ -16,6 +16,10 @@
 
 #include <QCoreApplication>
 #include <QSignalSpy>
+#include <QFile>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QStandardPaths>
 
 #include <atomic>
 #include <chrono>
@@ -98,6 +102,27 @@ TEST(controller_discovery_reports_recognised_and_unrecognised_devices)
 	// An unrecognised name is shown as itself, never dressed up as a model we know.
 	CHECK_EQ(devices[1].toMap().value("recognised").toBool(), false);
 	CHECK_EQ(devices[1].toMap().value("model").toString().toStdString(), std::string("Leon's Headphones"));
+}
+
+// After Aural disconnects, Windows can stop listing the headphones as connected. Paired
+// headphones Aural knows stay in the list, after the connected devices; other paired devices
+// that aren't connected are left out.
+TEST(controller_paired_headphones_are_listed_when_not_connected)
+{
+	ControllerFixture f({ BluetoothDevice{ "WH-1000XM3", "AA:BB:CC:DD:EE:FF", false },
+		BluetoothDevice{ "Some Mouse", "22:33:44:55:66:77", false }, XM4 });
+	CHECK(f.waitForDiscovery());
+
+	const auto devices = f.hp->devices();
+	CHECK_EQ(devices.size(), 2);
+	CHECK_EQ(devices[0].toMap().value("model").toString().toStdString(), std::string("WH-1000XM4"));
+	CHECK_EQ(devices[0].toMap().value("connected").toBool(), true);
+	CHECK_EQ(devices[1].toMap().value("model").toString().toStdString(), std::string("WH-1000XM3"));
+	CHECK_EQ(devices[1].toMap().value("connected").toBool(), false);
+	CHECK_EQ(devices[1].toMap().value("badge").toString().toStdString(), std::string("Paired, not connected"));
+
+	// Connecting to it goes through the normal path.
+	CHECK(f.connectTo(XM3));
 }
 
 // SON-7: the user backs out while the connect is still in flight. The session must end
@@ -334,6 +359,69 @@ TEST(controller_device_value_replaces_a_request_it_did_not_apply)
 	}), "the read-back after the write must replace the request with the device's value");
 }
 
+TEST(controller_manual_eq_refuses_an_unsupported_reported_layout)
+{
+	ControllerFixture f;
+	DeviceScript device;
+	device.on("06 01", replies::hex("07 01 01 51"))
+		.on("56 01", replies::hex("57 01 10 03 0A 0A 0A"));
+	device.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK(spinUntil([&] { return !f.hp->eqBandsEditable(); }));
+	const int preset = f.hp->eqPreset();
+	f.hp->setEqPreset(9); // Manual sends a custom curve, not just a preset ID.
+	CHECK_EQ(f.hp->eqPreset(), preset);
+	spinFor(std::chrono::milliseconds(300));
+	for (const auto& msg : f.fake->sentCommands())
+		CHECK(msg.messageBytes.empty() || static_cast<unsigned char>(msg.messageBytes[0]) != 0x58);
+}
+
+TEST(controller_new_capabilities_drive_options_indicators_and_assignments)
+{
+	ControllerFixture f;
+	DeviceScript script;
+	script.on("06 01", replies::hex("07 01 06 51 F4 E1 13 12 F6"))
+		.on("50 01", replies::hex("51 01 06 15 03 00 00 A0 00 A1 00"))
+		.on("56 01", replies::hex("57 01 00 06 0A 0A 0A 0A 0A 0A"))
+		.on("F0 04", replies::hex("F1 04 01 11"))
+		.on("E0 01", replies::hex("E1 01 00"))
+		.on("E2 01", replies::hex("E3 01 00"))
+		.on("E6 01", replies::hex("E7 01 00 00"))
+		.on("18 00", replies::hex("19 00 02"))
+		.on("14 00", replies::hex("15 00 02 00"))
+		.on("F0 06", replies::hex("F1 06 01 02 01 00 03 00 02 00 01 21 02 31 03 00 31 01 33 22 32 32 01 00 34"))
+		.on("F2 06", replies::hex("F3 06 01 00"))
+		.on("F6 06", replies::hex("F7 06 01 00"));
+	script.installOn(*f.fake);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK(spinUntil([&] { return f.hp->audioInfo().value("ready").toBool() && !f.hp->buttonAssignments().isEmpty() &&
+		f.hp->buttonAssignments().at(0).toMap().value("ready").toBool(); }));
+	CHECK_EQ(f.hp->audioInfo().value("codec").toString().toStdString(), std::string("AAC"));
+	CHECK_EQ(f.hp->audioInfo().value("dseeActivity").toString().toStdString(), std::string("Not processing"));
+	CHECK(f.hp->eqPresetOptions() == QVariantList({0, 9, 10}));
+	const auto powerChoices = f.hp->autoPowerOffOptions();
+	CHECK_EQ(powerChoices.size(), 1);
+	CHECK_EQ(powerChoices.front().toInt(), 0);
+	CHECK_EQ(f.hp->eqMinimum(), -10);
+	CHECK_EQ(f.hp->eqMaximum(), 10);
+	f.hp->setEqPreset(11); // unadvertised Custom 2
+	f.hp->setAutoPowerOff(5); // device capability overrides the XM4 fallback
+	f.hp->setButtonAssignment(0, 0x20); // unadvertised playback assignment
+	spinFor(std::chrono::milliseconds(200));
+	CHECK(!wasSent(*f.fake, "58 01 A2 00"));
+	CHECK(!wasSent(*f.fake, "F8 04 01 10 00"));
+	CHECK(!wasSent(*f.fake, "F8 06 01 20"));
+	f.fake->enqueueData(replies::hex("1B 00 10"));
+	f.fake->enqueueData(replies::hex("17 00 02 01"));
+	CHECK(spinUntil([&] { return f.hp->audioInfo().value("codec").toString() == "LDAC" &&
+		f.hp->audioInfo().value("dseeActivity").toString() == "Processing"; }));
+	f.hp->disconnectDevice();
+	CHECK(f.hp->buttonAssignments().isEmpty());
+	CHECK_EQ(f.hp->audioInfo().value("codec").toString().toStdString(), std::string("Not reported"));
+}
+
 TEST(controller_unadvertised_system_settings_are_withdrawn)
 {
 	ControllerFixture f;
@@ -490,6 +578,32 @@ TEST(controller_multipoint_change_is_checked_after_the_headphones_reconnect)
 // Seen on a WH-1000XM4 after accepting a multipoint change: the first reconnect attempt failed,
 // and the next link opened but the headphones sent start-up notifications without acknowledging
 // the INIT. The check has to ride through both and still read the setting.
+TEST(controller_stop_cancels_an_inflight_multipoint_reconnect)
+{
+	ControllerFixture f;
+	MultipointHeadset headset;
+	headset.s->dropOnAccept = true;
+	headset.installOn(*f.fake);
+	QSignalSpy errors(f.hp.get(), &HeadphonesController::errorOccurred);
+	CHECK(f.waitForDiscovery());
+	CHECK(f.connectTo(XM4));
+	CHECK(spinUntil([&] { return f.hp->multipointMode().value("phase").toString() == "ready"; }));
+	f.fake->blockConnect();
+	f.hp->setMultipointEnabled(true);
+	CHECK(spinUntil([&] { return f.hp->multipointAlert().value("messageId").toInt() == 6; }));
+	f.hp->answerMultipointAlert(6, true);
+	CHECK(spinUntil([&] { return f.fake->connectAttempts() == 2; }));
+	CHECK(!f.hp->reconnectReason().isEmpty());
+	f.hp->cancelReconnect();
+	CHECK(f.hp->reconnectReason().isEmpty());
+	f.fake->releaseConnect();
+	spinFor(std::chrono::milliseconds(3500));
+	CHECK(!f.hp->connected());
+	CHECK_EQ(f.fake->connectCount(), 1);
+	CHECK_EQ(f.fake->connectAttempts(), 2);
+	CHECK_EQ(errors.count(), 0);
+}
+
 TEST(controller_multipoint_check_survives_a_failed_connect_and_a_silent_handshake)
 {
 	ControllerFixture f;
@@ -619,6 +733,124 @@ TEST(controller_handshake_that_fails_twice_is_reported)
 	CHECK(!f.hp->connected());
 	spinFor(std::chrono::milliseconds(2500));
 	CHECK_MSG(f.fake->connectCount() == 2, "one automatic retry, not a loop");
+}
+
+
+TEST(controller_diagnostics_export_and_reset)
+{
+    ControllerFixture f;
+    DeviceScript script;
+    script.on("04 01", replies::hex("05 01 0A 57 48 2D 31 30 30 30 58 4D 34"))
+        .on("04 02", replies::hex("05 02 05 32 2E 39 2E 30"));
+    script.installOn(*f.fake);
+    CHECK(f.waitForDiscovery());
+    CHECK(f.connectTo(XM4));
+    CHECK(spinUntil([&] { return f.hp->diagnostics().value("firmware").toString() == "2.9.0"; }));
+    QStandardPaths::setTestModeEnabled(true);
+    const QString path = f.hp->exportDiagnostics();
+    CHECK(!path.isEmpty());
+    QFile file(path);
+    CHECK(file.open(QIODevice::ReadOnly));
+    const auto report = QJsonDocument::fromJson(file.readAll()).object();
+    file.close();
+    CHECK(file.remove());
+    CHECK(report.value("reportedModel").toString() == "WH-1000XM4");
+    CHECK(report.value("recentProtocolLog").toString().contains("05 02 05"));
+    QStandardPaths::setTestModeEnabled(false);
+    f.hp->disconnectDevice();
+    CHECK(f.hp->diagnostics().value("firmware").toString().isEmpty());
+}
+
+// Synthetic profiles exercise capability-driven support, not claims of hardware validation.
+TEST(controller_other_v1_models_use_reported_layout_and_options)
+{
+    for (const char* name : {"WH-1000XM3", "WF-1000XM3", "My legacy headset"})
+    {
+        BluetoothDevice device{name, "00:11:22:33:44:55"};
+        ControllerFixture f({device});
+        DeviceScript script;
+        script.on("06 01", replies::hex("07 01 02 51 F4"))
+            .on("50 01", replies::hex("51 01 03 0B 02 00 00 10 00"))
+            .on("56 01", replies::hex("57 01 00 03 05 05 05"))
+            .on("F0 04", replies::hex("F1 04 01 11"));
+        script.installOn(*f.fake);
+        CHECK(f.waitForDiscovery());
+        CHECK(f.connectTo(device));
+        CHECK(spinUntil([&] { return f.hp->equalizerAvailable() && f.hp->eqMinimum() == -5; }));
+        CHECK(!f.hp->eqBandsEditable());
+        CHECK(f.hp->autoPowerOffAvailable());
+        CHECK(!f.hp->supportsMultipoint());
+        f.hp->setEqPreset(9);
+        f.hp->setEqPreset(1);
+        CHECK(spinUntil([&] { return wasSent(*f.fake, "58 01 10 00"); }));
+        CHECK(!wasSent(*f.fake, "58 01 A0 00"));
+    }
+}
+
+TEST(controller_xm5_xm6_are_separate_from_legacy_commands)
+{
+    for (const char* name : {"WH-1000XM5", "WH-1000XM6"})
+    {
+        BluetoothDevice device{name, "00:11:22:33:44:55"};
+        ControllerFixture f({device});
+        DeviceScript script;
+        script.on("00 00", replies::hex("01 00 7F 00 00 00 00 00"));
+        script.installOn(*f.fake);
+        CHECK(f.waitForDiscovery());
+        CHECK(f.connectTo(device));
+        CHECK(f.hp->isV2());
+        CHECK(!f.hp->ambientAvailable());
+        CHECK(!f.hp->equalizerAvailable());
+        CHECK(!f.hp->autoPowerOffAvailable());
+        CHECK(!f.hp->limitedControlReason().isEmpty());
+        f.hp->setAmbientMode(0);
+        f.hp->setEqPreset(1);
+        f.hp->setConnectionPreference(1);
+        f.hp->setButtonAssignment(0, 0);
+        f.hp->setTouchPanelEnabled(false);
+        f.hp->setMultipointEnabled(true);
+        spinFor(std::chrono::milliseconds(150));
+        CHECK(wasSent(*f.fake, "00 00"));
+        CHECK(!wasSent(*f.fake, "06 01"));
+        CHECK(!wasSent(*f.fake, "66 02"));
+    }
+}
+
+
+TEST(controller_service_identity_overrides_name_and_exposes_v2_controls)
+{
+    ControllerFixture f;
+    f.fake->setSonyServices(false, true); // even though Bluetooth name says XM4
+    DeviceScript script;
+    script.on("00 00", replies::hex("01 00 03 00 30 37 00 01"))
+        .on("02 00", replies::hex("03 00 01 01 78"))
+        .on("06 00", replies::hex("07 00 01 50 01"))
+        .on("50 00", replies::hex("51 00 06 15 02 00 00 10 00"))
+        .on("52 00", replies::hex("53 00 00"))
+        .on("56 00", replies::hex("57 00 00 06 0A 0A 0A 0A 0A 0A"));
+    script.installOn(*f.fake);
+    CHECK(f.waitForDiscovery()); CHECK(f.connectTo(XM4));
+    CHECK(spinUntil([&] { auto rows = f.hp->v2Info().value("equalizers").toList(); return !rows.isEmpty() && rows[0].toMap().value("ready").toBool(); }));
+    CHECK(f.hp->isV2());
+    CHECK(f.hp->diagnostics().value("protocolSource").toString() == "Windows service cache");
+    CHECK(!f.hp->equalizerAvailable()); // legacy UI remains gated
+    f.hp->setV2EqPreset(0, 0x10);
+    CHECK(spinUntil([&] { return wasSent(*f.fake, "58 00 10 00"); }));
+    CHECK(!wasSent(*f.fake, "58 01 10 00"));
+    f.hp->disconnectDevice(); CHECK(f.hp->v2Info().isEmpty());
+}
+
+TEST(controller_v1_ambient_uses_device_range_and_encoding)
+{
+    ControllerFixture f({XM3}); DeviceScript script;
+    script.on("06 01", replies::hex("07 01 01 62"))
+        .on("60 02", replies::hex("61 02 02 02 01 01 00 04"))
+        .on("66 02", replies::hex("67 02 01 02 02 01 00 00"));
+    script.installOn(*f.fake); CHECK(f.waitForDiscovery()); CHECK(f.connectTo(XM3));
+    CHECK(spinUntil([&] { return f.hp->asmMaximum() == 4 && f.hp->ambientAvailable(); }));
+    f.hp->setAmbientMode(1);
+    CHECK(spinUntil([&] { return wasSent(*f.fake, "68 02 11 02 00 01 00 04"); }));
+    CHECK(!f.hp->supportsSpeakToChat()); CHECK(!f.hp->supportsMultipoint());
 }
 
 int main(int argc, char* argv[])

@@ -76,7 +76,8 @@ TEST(readback_unadvertised_settings_are_not_queried)
 
 	advertise(f, "62");
 	f.hp.sendPendingQueries();
-	CHECK(f.fake().sentCommands().empty());
+    CHECK(wasSent(f.fake(), "60 02")); // only the advertised ANC capability
+    for (const auto& message : f.fake().sentCommands()) CHECK(message.messageBytes == replies::hex("60 02"));
 
 	// Without a capability reply at all, a write is not followed by a read either.
 	EngineFixture g;
@@ -407,6 +408,24 @@ TEST(readback_equalizer_report)
 		CHECK(deliver(f, hex(bad)));
 	CHECK(deliver(f, hex("57 01 11 00"), DATA_TYPE::DATA_MDR_NO2));
 	CHECK_EQ(f.hp.getEqualizer().preset, 0xA0);
+}
+
+TEST(readback_queued_manual_curve_is_not_sent_after_an_unsupported_layout_arrives)
+{
+	EngineFixture f;
+	f.start();
+	EqualizerConfig cfg;
+	cfg.preset = static_cast<unsigned char>(EQ_PRESET::MANUAL);
+	f.hp.setEqualizer(cfg);
+	CHECK(deliver(f, hex("57 01 10 03 0A 0A 0A")));
+	bool refused = false;
+	try { f.hp.setChanges(); }
+	catch (const RecoverableException& exc) { refused = true; CHECK(!exc.shouldDisconnect); }
+	CHECK(refused);
+	CHECK_EQ(f.hp.getStatuses().equalizer, SettingStatus::Failed);
+	CHECK(!f.hp.isChanged());
+	for (const auto& msg : f.fake().sentCommands())
+		CHECK(msg.messageBytes.empty() || static_cast<unsigned char>(msg.messageBytes[0]) != 0x58);
 }
 
 TEST(readback_equalizer_echo_of_the_custom_marker_is_manual)

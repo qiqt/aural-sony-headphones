@@ -92,11 +92,15 @@ public:
 	std::chrono::milliseconds ackTimeout() const noexcept;
 
 	std::vector<BluetoothDevice> getConnectedDevices();
+	// Connected and paired devices, each flagged (see IBluetoothConnector).
+	std::vector<BluetoothDevice> getPairedDevices();
 
 	// OS-reported battery for a connected device (Windows: PnP battery property), or -1 if unavailable.
 	int getDeviceBatteryLevel(const std::string& deviceName);
 
-	SonyProtocol getProtocol() const noexcept { return _protocol; }
+	SonyProtocol getProtocol() const noexcept { return _protocol.load(); }
+    // False means the supplied fallback was used because service discovery was inconclusive.
+    bool protocolDiscovered() const noexcept { return _protocolDiscovered.load(); }
 
 private:
 	void _waitForAck(unsigned long long commandId, unsigned long long session);
@@ -126,5 +130,6 @@ private:
 	std::atomic<unsigned char> _seqNumber{ 0 };
 
 	Buffer _readBuffer;              // leftover bytes between frames (Listener thread only, no lock needed)
-	SonyProtocol _protocol = SonyProtocol::V1;
+	std::atomic<SonyProtocol> _protocol{ SonyProtocol::V1 };
+    std::atomic<bool> _protocolDiscovered{ false };
 };

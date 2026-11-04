@@ -102,6 +102,36 @@ public:
 		return static_cast<int>(count);
 	}
 
+    std::optional<SonyProtocol> discoverProtocol(const std::string&) override
+    {
+        std::unique_lock<std::mutex> guard(_mtx);
+        ++_serviceLookups;
+        _cv.notify_all();
+        _cv.wait(guard, [this] { return !_serviceDiscoveryBlocked; });
+        if (_serviceV2) return SonyProtocol::V2;
+        if (_serviceV1) return SonyProtocol::V1;
+        return std::nullopt;
+    }
+
+    void blockServiceDiscovery()
+    {
+        std::lock_guard<std::mutex> guard(_mtx);
+        _serviceDiscoveryBlocked = true;
+    }
+
+    int serviceLookups()
+    {
+        std::lock_guard<std::mutex> guard(_mtx);
+        return _serviceLookups;
+    }
+
+    void setSonyServices(bool v1, bool v2)
+    {
+        std::lock_guard<std::mutex> guard(_mtx);
+        _serviceV1 = v1;
+        _serviceV2 = v2;
+    }
+
 	void connect(const std::string& addr, SonyProtocol protocol) override
 	{
 		std::unique_lock<std::mutex> guard(_mtx);
@@ -140,6 +170,7 @@ public:
 		// blocking call is. Without this a test could deadlock its own teardown.
 		_connectAborted = true;
 		_batteryBlocked = false;
+        _serviceDiscoveryBlocked = false;
 		_cv.notify_all();
 	}
 
@@ -470,6 +501,10 @@ private:
 
 	size_t _chunkSize = 0;
 	int _osBattery = -1;
+	bool _serviceDiscoveryBlocked = false;
+    int _serviceLookups = 0;
+    bool _serviceV1 = false;
+    bool _serviceV2 = false;
 	int _connectCount = 0;
 	int _connectAttempts = 0;   // incremented on entry, before the gate; _connectCount on success
 	int _batteryLookups = 0;

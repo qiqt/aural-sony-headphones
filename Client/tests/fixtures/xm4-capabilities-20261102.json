@@ -1,0 +1,865 @@
+{
+  "date": "2026-11-02",
+  "model": "WH-1000XM4",
+  "firmware": "2.9.0",
+  "git_head": "4993626702439d81a8698d5e3c20db5fa9656345",
+  "working_tree_modified": true,
+  "mode": "read-only",
+  "source_log_sha256": "ACE4E8AA1C73E9E2E09B16B57987A3EF3F3D6679AA29F1E43FC7AF39387875C8",
+  "records": [
+    {
+      "milliseconds": 122,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "00 00"
+    },
+    {
+      "milliseconds": 269,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 270,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "10 00"
+    },
+    {
+      "milliseconds": 273,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "01 00 70 00"
+    },
+    {
+      "milliseconds": 273,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 292,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 292,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "06 01"
+    },
+    {
+      "milliseconds": 293,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "11 00 0A 00"
+    },
+    {
+      "milliseconds": 293,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 313,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 313,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "66 02"
+    },
+    {
+      "milliseconds": 314,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "07 01 16 71 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21"
+    },
+    {
+      "milliseconds": 314,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 332,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 332,
+      "direction": "TX",
+      "table": "T2",
+      "sequence": 0,
+      "payload": "36 01"
+    },
+    {
+      "milliseconds": 334,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "67 02 01 02 02 01 00 00"
+    },
+    {
+      "milliseconds": 334,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 353,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 353,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D0 D1 01"
+    },
+    {
+      "milliseconds": 372,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 372,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D0 D2 01"
+    },
+    {
+      "milliseconds": 373,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D1 D1 02 13 54 4F 55 43 48 5F 50 41 4E 45 4C 5F 53 45 54 54 49 4E 47 00 01 00"
+    },
+    {
+      "milliseconds": 373,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 397,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 397,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F0 03"
+    },
+    {
+      "milliseconds": 411,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D1 D2 02 12 4D 55 4C 54 49 50 4F 49 4E 54 5F 53 45 54 54 49 4E 47 1A 4D 55 4C 54 49 50 4F 49 4E 54 5F 53 45 54 54 49 4E 47 5F 53 55 4D 4D 41 52 59 01 00"
+    },
+    {
+      "milliseconds": 411,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 443,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 443,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "56 01"
+    },
+    {
+      "milliseconds": 444,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F1 03 00"
+    },
+    {
+      "milliseconds": 444,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 462,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 462,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F6 05"
+    },
+    {
+      "milliseconds": 463,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "57 01 11 06 12 09 0B 0A 0D 0F"
+    },
+    {
+      "milliseconds": 463,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 484,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 484,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "FA 05"
+    },
+    {
+      "milliseconds": 486,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F7 05 00 00"
+    },
+    {
+      "milliseconds": 486,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 551,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 551,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "E6 02"
+    },
+    {
+      "milliseconds": 552,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "FB 05 00 00 00 00"
+    },
+    {
+      "milliseconds": 552,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 584,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 585,
+      "direction": "TX",
+      "table": "T2",
+      "sequence": 0,
+      "payload": "46 01 01"
+    },
+    {
+      "milliseconds": 586,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "E7 02 00 00"
+    },
+    {
+      "milliseconds": 586,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 613,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 613,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F6 04"
+    },
+    {
+      "milliseconds": 614,
+      "direction": "RX",
+      "table": "T2",
+      "sequence": 0,
+      "payload": "47 01 01 01"
+    },
+    {
+      "milliseconds": 614,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 637,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 637,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D2 D1"
+    },
+    {
+      "milliseconds": 638,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F7 04 01 10 00"
+    },
+    {
+      "milliseconds": 638,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 672,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 672,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D6 D1"
+    },
+    {
+      "milliseconds": 673,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D3 D1 00"
+    },
+    {
+      "milliseconds": 673,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 692,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 692,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D2 D2"
+    },
+    {
+      "milliseconds": 694,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D7 D1 01 01"
+    },
+    {
+      "milliseconds": 694,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 713,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 713,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D6 D2"
+    },
+    {
+      "milliseconds": 714,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "D3 D2 00"
+    },
+    {
+      "milliseconds": 714,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 732,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 732,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F2 03"
+    },
+    {
+      "milliseconds": 734,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "D7 D2 01 00"
+    },
+    {
+      "milliseconds": 734,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 763,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 763,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F6 03"
+    },
+    {
+      "milliseconds": 764,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F3 03 00"
+    },
+    {
+      "milliseconds": 764,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 783,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 784,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F7 03 00 01"
+    },
+    {
+      "milliseconds": 784,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3372,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "04 01"
+    },
+    {
+      "milliseconds": 3402,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3402,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "04 02"
+    },
+    {
+      "milliseconds": 3403,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "05 01 0A 57 48 2D 31 30 30 30 58 4D 34"
+    },
+    {
+      "milliseconds": 3403,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3422,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3422,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "50 01"
+    },
+    {
+      "milliseconds": 3423,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "05 02 05 32 2E 39 2E 30"
+    },
+    {
+      "milliseconds": 3423,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3446,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3446,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F0 04"
+    },
+    {
+      "milliseconds": 3466,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "51 01 06 15 0C 00 00 10 00 11 00 12 00 13 00 14 00 15 00 16 00 17 00 A0 00 A1 00 A2 00"
+    },
+    {
+      "milliseconds": 3466,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3489,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3489,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "E0 01"
+    },
+    {
+      "milliseconds": 3512,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F1 04 02 10 11"
+    },
+    {
+      "milliseconds": 3512,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3514,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3514,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "E6 01"
+    },
+    {
+      "milliseconds": 3532,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "E1 01 00"
+    },
+    {
+      "milliseconds": 3532,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3534,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3534,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "18 00"
+    },
+    {
+      "milliseconds": 3552,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "E7 01 00 00"
+    },
+    {
+      "milliseconds": 3552,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3556,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3556,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "14 00"
+    },
+    {
+      "milliseconds": 3579,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "19 00 02"
+    },
+    {
+      "milliseconds": 3579,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3593,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3593,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F0 06"
+    },
+    {
+      "milliseconds": 3617,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "15 00 02 00"
+    },
+    {
+      "milliseconds": 3617,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3618,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3618,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F2 06"
+    },
+    {
+      "milliseconds": 3643,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F1 06 01 02 01 00 03 00 02 00 01 21 02 31 03 00 31 01 33 22 32 32 01 00 34"
+    },
+    {
+      "milliseconds": 3643,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3644,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3644,
+      "direction": "TX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F6 06"
+    },
+    {
+      "milliseconds": 3662,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 1,
+      "payload": "F3 06 01 00"
+    },
+    {
+      "milliseconds": 3662,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 0,
+      "payload": null
+    },
+    {
+      "milliseconds": 3666,
+      "direction": "RX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    },
+    {
+      "milliseconds": 3681,
+      "direction": "RX",
+      "table": "T1",
+      "sequence": 0,
+      "payload": "F7 06 01 00"
+    },
+    {
+      "milliseconds": 3681,
+      "direction": "TX",
+      "table": "ACK",
+      "sequence": 1,
+      "payload": null
+    }
+  ]
+}

@@ -1,9 +1,9 @@
 #pragma once
 
-// Opt-in protocol trace: every frame the engine sends and receives, and every reply it could not
-// use, written to a text file so the protocol can be checked against real headphones.
+// Protocol diagnostics: the latest 256 events stay in memory for explicit UI export.
+// Optional continuous disk tracing records every event for hardware analysis.
 //
-// Off unless the AURAL_TRACE environment variable is set when the process starts:
+// Continuous disk tracing is off unless AURAL_TRACE is set when the process starts:
 //   AURAL_TRACE=1        writes to aural-trace.log in the temp directory (%TEMP% on Windows)
 //   AURAL_TRACE=<path>   writes to that file
 // Each process appends a "trace started" line, then one line per event, prefixed with the
@@ -19,6 +19,7 @@
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <deque>
 
 namespace ProtocolTrace
 {
@@ -44,6 +45,7 @@ namespace ProtocolTrace
 		{
 			std::mutex mtx;
 			std::ofstream out;
+            std::deque<std::string> recent;
 			std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 
 			Sink()
@@ -85,17 +87,28 @@ namespace ProtocolTrace
 		try
 		{
 			detail::Sink& s = detail::sink();
-			if (!s.out.is_open())
-				return;
+
 			const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
 				std::chrono::steady_clock::now() - s.start).count();
 			std::lock_guard<std::mutex> guard(s.mtx);
-			s.out << ms << " ms  " << text << '\n' << std::flush;
+			const std::string entry = std::to_string(ms) + " ms  " + text;
+            s.recent.push_back(entry.substr(0, 8192));
+            if (s.recent.size() > 256) s.recent.pop_front();
+            if (s.out.is_open()) s.out << entry << '\n' << std::flush;
 		}
 		catch (...)
 		{
 		}
 	}
+
+    inline std::string recentLog()
+    {
+        auto& s = detail::sink();
+        std::lock_guard guard(s.mtx);
+        std::string result;
+        for (const auto& entry : s.recent) result += entry + "\n";
+        return result;
+    }
 
 	inline std::string hex(const Buffer& bytes)
 	{
@@ -127,8 +140,7 @@ namespace ProtocolTrace
 
 	inline void frame(const char* direction, DATA_TYPE type, unsigned int seq, const Buffer& payload) noexcept
 	{
-		if (!enabled())
-			return;
+
 		try
 		{
 			std::string text = std::string(direction) + " " + table(type) + " seq " + std::to_string(seq);
@@ -145,8 +157,7 @@ namespace ProtocolTrace
 	// the engine does not (or not yet) understand, so it changed nothing.
 	inline void unused(const CommandSerializer::Message& msg) noexcept
 	{
-		if (!enabled())
-			return;
+
 		try
 		{
 			line("   ^ not used: no decoder accepted this " + table(msg.dataType) + " reply");

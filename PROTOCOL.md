@@ -7,15 +7,114 @@ we actually know about each one. It is the in-repository companion to the vault 
 
 ## Evidence levels
 
+### Owner's manual validation, reported 2026-11-02
+
+The owner reports having manually tested all of the existing features discussed in the hardware
+checklist and that they work on their WH-1000XM4. Record that as successful owner-reported manual
+validation, including the setting changes, physical behavior and multipoint flows previously
+described as pending. It is separate from the agent's read-only capture and from synthetic tests.
+The report does not supply per-step logs or establish which firmware/build was used for every
+manual check. It does not validate features newly implemented after that report.
+
+The historical checklist below records capture coverage and remaining trace/detail questions;
+it must not be read as saying the owner has not tested the existing controls. Further captures
+are useful for protocol precision, not a prerequisite to acknowledging that manual validation.
+
 | Tag | Meaning |
 |---|---|
 | **HW** | Seen on a real WH-1000XM4. Unless noted otherwise this means the protocol traces captured on 2026-10-31 (firmware not recorded); their frames are fixtures in `test_protocol.cpp`, `test_discovery.cpp` and `test_multipoint.cpp`. |
 | **APK** | Recovered statically from Sound Connect 13.3.0 serializers, decoders and callers. No capture. |
 | **GB** | Layout taken from Gadgetbridge's V1 implementation (the source of several existing commands). |
 | **Test** | Covered only by synthetic tests against `FakeBluetoothConnector`. |
+| **Owner** | The owner reports successful manual testing of the existing controls on their XM4 (2026-11-02). Not a packet capture and not validation of later additions. |
 
-Anything not tagged HW has not been confirmed on hardware. A passing test proves the C++ matches
-the evidence it was written from; it does not prove a headset accepts the bytes.
+HW identifies captured hardware traffic; Owner identifies the owner's manual validation.
+A passing synthetic test proves the C++ matches its fixtures; it does not prove a headset
+accepts the bytes.
+
+The Owner report above is separate hardware-behavior evidence. The HW tags in the historical
+tables specifically mean captured protocol traffic.
+
+## Capability-driven additions, 2026-11-02
+
+This section supersedes historical statements below that EQ/power-off capability layouts,
+connection preference, codec/activity indicators and assignment parsing are unimplemented.
+The implementation uses `EqualizerProtocol.h`, `AudioProtocol.h`, and `AssignmentProtocol.h`.
+Live work in this pass was read-only; no new setting or assignment writes were sent to the headset.
+
+### Equalizer and auto power-off
+
+- `50 01` -> `51 01 bandCount levelSteps presetCount {presetId nameLength nameBytes}*`.
+  The XM4 reports six levels, 21 steps and twelve preset IDs. Sony's signed level conversion is
+  `raw - ((levelSteps - 1) / 2)`. This establishes control steps, not an acoustic dB measurement.
+- Preset choices and slider ranges follow this capability. The current five-band plus Clear Bass
+  editor requires six valid reported levels; unsupported shapes cannot produce custom writes.
+- `F0 04` -> `F1 04 count elementIds*`. The XM4 reports `10 11` (when removed / disabled).
+  A received capability replaces the model fallback; an unadvertised timer is not offered.
+- Save to Custom 1/2 follows Sony's observed application workflow: select A1/A2 with zero levels,
+  wait for matching EQ read-back, send `58 01 FF count levels...`, then verify the resulting curve.
+  No direct A1/A2-with-levels packet is invented. Pending saves are session-scoped and bounded.
+  Actual survival across headset power cycles has not been tested in this read-only pass.
+
+Sony evidence: EQ schema `ev_2f5a6b18b52b743b5e7206e81e5c393079ae1462b155cebc999efb3273bb3da4`;
+power-off `ev_90a799e6abd41a78eae31ffd2ec43272b3cbaaf314a32e88cfcedb571d1e49c8`;
+gain/FF sender `ev_6d9dab53139ed782b391c963abf0877b9971acbf03f1cc2b05e0757d716a3111`;
+custom selection/observer/edit sequence `ev_e4e47bc2c25437418344273df54b45556c231ac17adf81b4b826be3b6a750158`.
+All are retained in the reverse-engineering lab's `sony-evidence` directory.
+
+### Connection preference, codec and DSEE activity
+
+| Operation | Bytes (table 1) | Meaning |
+|---|---|---|
+| Connection capability | `E0 01` -> `E1 01 00` | SOUND_CONNECTION type |
+| Availability | `E2 01` -> `E3/E5 01 a` | 00 available, 01 unavailable |
+| Read preference | `E6 01` -> `E7/E9 01 00 v` | 00 sound quality, 01 stability |
+| Write preference | `E8 01 00 v` | Requires capability, availability and current value |
+| Read codec | `18 00` -> `19/1B 00 codec` | 00 unsettled, 01 SBC, 02 AAC, 10 LDAC, 20 aptX, 21 aptX HD, FF other |
+| Read DSEE activity | `14 00` -> `15/17 00 type status` | type 00 HX, 01 DSEE, 02 HX AI; status 00 OFF, 01 VALID, 02 INVALID |
+
+System shows codec and DSEE activity independently of the DSEE enabled setting. Only activity
+status 01 displays Processing, matching Sony's indicator logic. Unknown readings remain unknown.
+Availability is rechecked before a queued connection-preference write; ACK does not confirm it.
+
+Sony evidence: `ev_6136aa20c0df0bace8a3901907c7abae043e28a10ff91406eadbf7d78a565893`,
+`ev_79d8bd330ee3f8a9000e8826b9dd1ac18822e45361abd5e85da07eb7e0027f22`,
+`ev_a70f99d748ea6b28d8dfa676b9c8a88eb50de523c2ecd20e39015de7c6a6034c`.
+
+### Button assignments
+
+Capability `F0 06` -> `F1 06 keyCount {keyId keyType defaultPreset presetCount
+{presetId actionCount {action function}*}*}*` defines the ordering and allowed options.
+Read `F6 06` -> `F7/F9 06 count presetIds*`; availability `F2 06` ->
+`F3/F5 06 count statuses*` (00 available, 01 unavailable).
+Writes are `F8 06 count presetIds*` in the original capability order, preserving every other key.
+There are no key IDs in the SET payload. Aural checks both capability membership and availability.
+
+The current XM4 describes one Custom button, with Ambient sound control, Google Assistant and
+Amazon Alexa presets. The UI displays the actions from the returned capability. This is preset
+assignment, not arbitrary gesture remapping; assistant setup on a phone may still be required.
+Sony sources: `wm0/c` -> `wm0/b` -> `wm0/d` capability records; `vm0/e` availability;
+`l00/b.p` and `.f` preserve capability-order indexes.
+Retained assignment evidence: `ev_0e8af1c0458bae5e8a50d00819ac91cf456c4171b9140850cd97577e3a0b5836`,
+`ev_718b7c42944f9042c6b0264269556cac843e5b8715a2cd68638931b1029129ad`,
+`ev_f46fabdad2fbea3b9b4e054782b64d08e4d0841b74286c7523165d3aa1c37747`.
+
+Sanitized live GET replies are retained in `Client/tests/fixtures/xm4-capabilities-20261102.json`.
+They confirm AAC, sound-quality priority, inactive DSEE, and the assignment schema above on
+firmware 2.9.0. Synthetic tests exercise writes, malformed packets, unavailable states, read-back
+and session reset. The owner's earlier validation does not cover these newly added controls.
+
+The integrated engine was also exercised read-only against the same headset. Capture:
+`Client/tests/fixtures/xm4-integrated-readonly-20261102.json` (174 frames). It decoded the six-band,
+21-step, twelve-preset EQ capability; two power choices; connection preference 00 and available
+status `E3 01 00`; AAC; inactive DSEE; and one assignable control. Outgoing payloads were audited
+as initialization/GET requests and transport ACKs only. No new feature write was tested on hardware.
+
+Validation of this working tree: Debug engine, Qt controller and app builds passed; all 13 engine
+CTest suites and 23 controller tests passed; `qmllint -W 0` passed for the full QML module;
+`git diff --check` passed. Tests cover capability bounds, mismatched tables, per-key availability,
+read-back, disconnect/reset, Custom-slot selection before curve transmission, selection changes
+from elsewhere, and save timeout without replay. No computer-use or visible UI session was run.
 
 ## Protocol trace
 
@@ -39,9 +138,9 @@ The trace includes the headphones' address and the names of their paired devices
 
 | Message | Evidence | Notes |
 |---|---|---|
-| `06 01` → `07 01 count ids…` | HW, APK, Test | The count is validated and only the listed bytes are function IDs. The old parser scanned the whole reply, so a reply listing 19 functions (count `0x13`) advertised CODEC_INDICATOR (`0x13`). The XM4 lists 23: `71 38 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21`. That is no VPT (`41`) and no sound position (`42`), so Spatial Sound is no longer offered on it. `14 21 22 30 71 A1 C1` are not mapped yet. |
+| `06 01` → `07 01 count ids…` | HW, APK, Test | The count is validated and only the listed bytes are function IDs. The old parser scanned the whole reply, so a reply listing 19 functions (count `0x13`) advertised CODEC_INDICATOR (`0x13`). The XM4 lists 23: `71 38 62 F5 81 51 A1 E1 E2 D2 F6 D1 F4 F3 39 12 13 11 30 C1 14 22 21`. That is no VPT (`41`) and no sound position (`42`), so Spatial Sound is no longer offered on it. `14 21 22 30 71 A1 C1` are not used by Aural; their names are under "Seen on the XM4, not used". |
 | Discovery success | Test | `capabilitiesKnown()` is true once a valid `07` arrives. "The device listed nothing" and "the device never answered" stay distinct. Unknown keeps the existing recognised-model fallback for the controls that predate this work. |
-| `D0 slot 01` → `D1 slot fmt len title len summary type …` | HW, APK, Test | Sent for every advertised slot D1/D2/D3. A feature is matched by its ENUM_NAME title (`TOUCH_PANEL_SETTING`, `MULTIPOINT_SETTING`) and must be BOOLEAN_TYPE. LIST_TYPE is never coerced. Lengths are UTF-8 byte counts ≤ 128. **No slot is assumed.** On the XM4, touch panel is D1 and multipoint is D2. Both records end `01 00`: one byte after the type, which the APK-derived reference rejected. Aural accepts it; what the byte means is not known. |
+| `D0 slot 01` → `D1 slot fmt len title len summary type …` | HW, APK, Test | Sent for every advertised slot D1/D2/D3. A feature is matched by its ENUM_NAME title (`TOUCH_PANEL_SETTING`, `MULTIPOINT_SETTING`) and must be BOOLEAN_TYPE. LIST_TYPE is never coerced. Lengths are UTF-8 byte counts ≤ 128. **No slot is assumed.** On the XM4, touch panel is D1 and multipoint is D2. Both records end `01 00`: one byte after the type, which the APK-derived reference used to reject. Aural and the reference now accept it; what the byte means is not known. |
 | `D2 slot` → `D3/D5 slot a`, `D6 slot` → `D7/D9 slot 01 v` | HW, APK, Test | Queued once a slot is resolved. `a`: 00 available, 01 unavailable (opposite polarity to `v`). The XM4 replied `D3 D1 00` and `D7 D1 01 01` (touch panel available, on), and `D3 D2 00` and `D7 D2 01 01` (multipoint available, on). |
 | `F0 03` → `F1 03 type` | HW, APK, Test | Only when function `F3` is advertised. Only type `00` (ProtocolSettingType.ON_OFF) is accepted. The XM4 replies `F1 03 00`. |
 | `F2 03` → `F3/F5 03 a`, `F6 03` → `F7/F9 03 00 v` | HW (reads), APK, Test | Wearing control availability and value. Availability is not a worn/not-worn sensor. The XM4 replied `F3 03 00` and `F7 03 00 01`. |
@@ -143,7 +242,57 @@ the very first connection: right after a link opens, the headphones may not be r
 `controller_multipoint_check_survives_a_failed_connect_and_a_silent_handshake` replays this
 sequence.
 
+## Seen on the XM4, not used
+
+The names come from the Sound Connect 13.3.0 enums in the byte catalog. The catalog has no field
+layouts for these messages, so each reading below rests on which enum value a byte matches. Aural
+ignores all of them (the trace marks them "not used"), and none gets a control without more
+evidence.
+
+| Bytes | Command | Reading | Seen |
+|---|---|---|---|
+| `01 00 70 00` | CONNECT_RET_PROTOCOL_INFO | The reply to `00 00`. Layout not recovered; `70` may be a protocol version. | Every connect. |
+| `1B 00 02` | COMMON_NTFY_AUDIO_CODEC | `02` is AAC. | On a new link after a multipoint change. |
+| `A5 01 00 v` | PLAY_NTFY_STATUS, PLAYBACK_CONTROLLER | `v` matches PlaybackStatus: `01` play, `02` pause. The `00` is not recovered. | On a new link (`02`), and unprompted later (`01`). |
+| `A9 01 20 v` | PLAY_NTFY_PARAM, PLAYBACK_CONTROLLER | `20` is VOLUME, so `v` is the volume (16 and 11 were seen). | After each DSEE write, and on a new link. |
+| `A9 01 00` | PLAY_NTFY_PARAM, PLAYBACK_CONTROLLER | `00` is TRACK_NAME, with nothing after it. | On a new link. |
+| `F5 05 00 v` | SYSTEM_NTFY_STATUS, SMART_TALKING_MODE | Not recovered. `00` and then `01` arrived just before Speak-to-Chat switched to ambient, so it may be the conversation state. | Turning Speak-to-Chat on. |
+
+Advertised functions Aural does not use: `14` BLE_SETUP, `21` POWER_OFF, `22` CONCIERGE_DATA, `30`
+FW_UPDATE, `71` AUTO_NC_ASM (Sony's adaptive sound control), `A1` PLAYBACK_CONTROLLER and `C1`
+ACTION_LOG_NOTIFIER.
+
 ## XM4 hardware pass
+
+### Read-only follow-up, 2026-11-02
+
+Run without any GUI automation using `Client/tools/headset_probe`. The headset was already
+connected to Windows; the probe opened and closed its own RFCOMM control socket. It sent
+initialization and GET requests plus transport ACKs, with no settings writes or alert responses.
+Source: HEAD `4993626` with local modifications. The sanitized frame capture, original-log digest
+and probe-source digest are preserved in `Client/tests/fixtures/xm4-readonly-20261102.json`.
+
+- Model reply: `05 01 0A 57 48 2D 31 30 30 30 58 4D 34` (WH-1000XM4).
+- Firmware reply: `05 02 05 32 2E 39 2E 30` (2.9.0).
+- Battery: 10%, charging byte 00. NC on; EQ preset 11 with six levels;
+  Speak-to-Chat off; DSEE off; voice guidance on; power-off active 10, selected timer 00.
+- Touch panel: slot D1, available, on. Wearing control: available, on.
+  Multipoint: slot D2, available, off. The function list contains 22 entries and excludes 38,
+  consistent with the earlier observation that paired-device management is absent with multipoint off.
+- EQ capability GET `50 01` returned
+  `51 01 06 15 0C 00 00 10 00 11 00 12 00 13 00 14 00 15 00 16 00 17 00 A0 00 A1 00 A2 00`.
+- Power-off capability GET `F0 04` returned `F1 04 02 10 11`.
+
+These last two replies are new raw capability evidence, not validated general-purpose schemas.
+The power-off bytes are consistent with the two known XM4 choices; the EQ bytes are consistent
+with six levels and twelve preset records. Confirm the field layouts against the recovered
+decoders before implementing production capability parsers. This capture does not establish
+EQ gain scaling or persistent Custom 1/2 editing.
+
+Settings changes, multipoint enable/LDAC, physical controls and listening checks remain deferred
+at the user's request. Firmware 2.9.0 identifies this pass only, not the earlier October traces.
+
+### October hardware pass and remaining checks
 
 Partly run, in three traces on 2026-10-31. The first covers steps 2–4, most of step 5, and the
 reads in steps 6 and 8. It also found the two bugs described above: the unacknowledged first
@@ -194,3 +343,48 @@ To be completed on a WH-1000XM4 before any APK-only behaviour is described as wo
 10. Time how long the headset takes to answer the write, to drop the link, and to come back.
     Compare these with Aural's limits (20 s waiting for an answer, 60 s reconnecting, 15 s to read
     the value).
+
+## Diagnostics, feedback, and broader V1 verification (2026-11-02)
+
+V1 initialization now reads model (`04 01`) and firmware (`04 02`). The decoder
+accepts table-1 `05 selector length ASCII-bytes` only, with exact length and no
+control characters. Captured XM4 replies are `05 01 0A 57 48 2D 31 30 30 30 58 4D 34`
+and `05 02 05 32 2E 39 2E 30`. These strings are informational: they neither change
+the selected transport nor authorize extra controls. Session reset clears them.
+
+System diagnostics offers an explicit JSON export with build/device details,
+capability IDs, setting states, audio indicators, and a bounded recent process log.
+No environment variable or visible shell is needed. Nothing is uploaded.
+
+Setting chips distinguish sending, sent-but-unconfirmed, confirmed, and inability
+to apply a change. Hover/accessibility descriptions explain the difference and
+retry action. Failed transitions produce a setting-specific notification. Connection
+preference and assignment selectors retain the requested choice through ACK while
+the reported-value getters stay unchanged; read-back settles the UI to what the
+device reports. These changes do not introduce automatic write retries.
+
+The generic `--read-v1` probe allows collecting other already-connected V1 devices.
+Synthetic controller profiles cover WH-1000XM3, WF-1000XM3, and an unrecognized
+name with a three-level EQ and restricted power choices. They verify that capability
+replies enable the available preset controls, disable the incompatible six-level
+editor, and suppress unadvertised functions. They are not physical model validation.
+
+At the end of the earlier V1 pass, XM5/XM6 had transport isolation only.
+The subsequent multi-model implementation adds V2 startup, EQ, ANC and audio
+controls; see the implementation status in PROTOCOL-MULTIMODEL.md. Legacy setters
+remain isolated from V2, and full model support still requires hardware validation.
+
+Validation for this pass: all 13 engine suites passed; the assignment suite also
+passed after adding pending-value assertions. All 26 controller tests passed,
+including diagnostics export/reset, alternate V1 profiles, and V2 isolation.
+Debug app and headless probe builds passed, QML lint reported no warnings, and
+`git diff --check` passed. No computer-use automation, headset writes, or Bluetooth
+reconnections were performed during this pass. New model coverage is simulated.
+
+## Multi-model REA follow-up
+
+See [XM3/XM5/XM6 implementation research](PROTOCOL-MULTIMODEL.md) for the
+2026-11-02 Sony service-discovery and V2 startup findings, generation-specific
+payload differences, evidence IDs, implementation order, and unresolved hardware
+questions. The [V2 enum catalog](docs/sony-v2-byte-catalog.json) contains 34 enums
+and 539 entries; it is an app-wide vocabulary, not a model support matrix.

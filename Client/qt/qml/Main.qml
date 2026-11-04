@@ -316,11 +316,9 @@ ApplicationWindow {
                     visible: !Hp.connected && win.currentScreen < 6
                 }
 
-                PlaceholderScreen {
+                V2Screen {
                     anchors.fill: parent
                     visible: Hp.connected && Hp.isV2 && win.currentScreen < 6
-                    title: "Limited support"
-                    message: Hp.deviceModel + " uses Sony's v2 protocol. Basic connection works; full control is coming next."
                 }
 
                 StackLayout {

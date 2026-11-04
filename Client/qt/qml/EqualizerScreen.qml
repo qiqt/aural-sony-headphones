@@ -62,6 +62,8 @@ Item {
                         Repeater {
                             model: root.presetNames
                             delegate: Rectangle {
+                                enabled: !Hp.eqSavePending && Hp.eqPresetOptions.indexOf(index) >= 0 && (index !== 9 || Hp.eqBandsEditable)
+                                opacity: enabled ? 1 : 0.4
                                 Layout.fillWidth: true
                                 Layout.preferredHeight: 34
                                 radius: Theme.radius
@@ -112,7 +114,7 @@ Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
-                    readonly property bool editing: Hp.eqManual && Hp.eqBandsEditable
+                    readonly property bool editing: Hp.eqManual && Hp.eqBandsEditable && !Hp.eqSavePending
                     opacity: editing ? 1.0 : 0.6
                     ColumnLayout {
                         anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.base
@@ -132,7 +134,9 @@ Item {
                                     Layout.fillHeight: true
                                     label: root.bandLabels[index]
                                     value: Hp.eqBands[index]
-                                    active: Hp.eqManual && Hp.eqBandsEditable
+                                    active: Hp.eqManual && Hp.eqBandsEditable && !Hp.eqSavePending
+                                    minimum: Hp.eqMinimum
+                                    maximum: Hp.eqMaximum
                                     onMoved: (v) => Hp.setEqBand(index, v)
                                 }
                             }
@@ -142,9 +146,31 @@ Item {
                                 Layout.fillHeight: true
                                 label: "Clear Bass"
                                 value: Hp.eqClearBass
-                                active: Hp.eqManual && Hp.eqBandsEditable
+                                active: Hp.eqManual && Hp.eqBandsEditable && !Hp.eqSavePending
+                                minimum: Hp.eqMinimum
+                                maximum: Hp.eqMaximum
                                 onMoved: (v) => Hp.eqClearBass = v
                             }
+                        }
+                        Flow {
+                            Layout.fillWidth: true
+                            spacing: Theme.sm
+                            AuralButton {
+                                text: "Save to Custom 1"
+                                enabled: Hp.eqCanSave && Hp.eqPresetOptions.indexOf(10) >= 0
+                                onClicked: Hp.saveEqToCustom(1)
+                            }
+                            AuralButton {
+                                text: "Save to Custom 2"
+                                enabled: Hp.eqCanSave && Hp.eqPresetOptions.indexOf(11) >= 0
+                                onClicked: Hp.saveEqToCustom(2)
+                            }
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            visible: Hp.eqSavePending
+                            text: "Saving the curve and checking the headphones' reply…"
+                            wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm
                         }
                     }
                 }

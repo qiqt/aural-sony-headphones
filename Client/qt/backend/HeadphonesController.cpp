@@ -9,10 +9,30 @@
 #include "ProtocolTrace.h"
 
 #include <QDebug>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QStandardPaths>
+#include <QSaveFile>
+#include <QDir>
+#include <QDateTime>
+#include <QUuid>
 
 #include <algorithm>
 
 namespace {
+
+QString settingLabel(const QString& key)
+{
+    static const QMap<QString, QString> labels {
+        {"ambient", "ambient sound"}, {"equalizer", "equalizer"}, {"spatial", "spatial sound"},
+        {"speakToChat", "Speak-to-Chat"}, {"dsee", "DSEE"}, {"voiceGuidance", "voice guidance"},
+        {"autoPowerOff", "automatic power-off"}, {"optimizer", "optimization"},
+        {"multipoint", "device connection"}, {"touchPanel", "touch controls"},
+        {"wearingControl", "wearing control"}, {"multipointMode", "multipoint mode"},
+        {"connectionMode", "connection preference"}, {"assignment", "button assignment"}
+    };
+    return labels.value(key, key);
+}
 
 std::unique_ptr<IBluetoothConnector> makeConnector()
 {
@@ -63,6 +83,8 @@ QVariantMap statusMap(const SettingsStatus& s)
     m["touchPanel"] = statusName(s.touchPanel);
     m["wearingControl"] = statusName(s.wearingControl);
     m["multipointMode"] = statusName(s.multipointMode);
+    m["connectionMode"] = statusName(s.connectionMode);
+    m["assignment"] = statusName(s.assignment);
     return m;
 }
 
@@ -259,6 +281,7 @@ void HeadphonesController::init()
     // The UI shows multipoint alerts (MultipointConfirmDialog) and sends the user's answer, so the
     // engine may enable them on the headphones before a multipoint change.
     _headphones.installAlertHandling();
+    syncExtras();
 
     _demo = qEnvironmentVariableIsSet("AURAL_DEMO");
     if (_demo)
@@ -324,7 +347,11 @@ HeadphonesController::~HeadphonesController()
 }
 
 QString HeadphonesController::deviceName() const { return QString::fromStdString(_device.name); }
-QString HeadphonesController::deviceModel() const { return displayModel(_device.name); }
+QString HeadphonesController::deviceModel()
+{
+    const auto model = _headphones.reportedModel();
+    return model.empty() ? displayModel(_device.name) : QString::fromStdString(model);
+}
 bool HeadphonesController::modelRecognised() const { return _identity.recognised; }
 
 int HeadphonesController::batteryLevel()
@@ -336,7 +363,7 @@ int HeadphonesController::batteryLevel()
 
 bool HeadphonesController::batteryCharging() { return _headphones.isBatteryCharging(); }
 
-bool HeadphonesController::capabilitiesKnown() { return _demo ? true : _headphones.capabilitiesKnown(); }
+bool HeadphonesController::capabilitiesKnown() { return _demo ? true : isV2() ? _headphones.getV2Snapshot().phase == "ready" : _headphones.capabilitiesKnown(); }
 
 // SON-11. Two sources of evidence, in order: what the device said, then what we know about the
 // model. An unidentified device gives us neither, so the answer is no - the app does not
@@ -355,6 +382,8 @@ bool HeadphonesController::featureAvailable(DEVICE_CAPABILITIES cap)
     }
     // No valid capability reply yet (or none ever, on a device that does not answer the query):
     // the model is what tells a WH-1000XM4 apart from a stranger.
+    if (cap == DEVICE_CAPABILITIES::MULTI_POINT || cap == DEVICE_CAPABILITIES::SPEAK_TO_CHAT)
+        return _identity.model == SonyModel::WH_1000XM4;
     return _identity.recognised;
 }
 
@@ -376,24 +405,19 @@ bool HeadphonesController::supportsOptimizer() { return featureAvailable(DEVICE_
 bool HeadphonesController::supportsSpeakToChat() { return featureAvailable(DEVICE_CAPABILITIES::SPEAK_TO_CHAT); }
 bool HeadphonesController::supportsMultipoint() { return featureAvailable(DEVICE_CAPABILITIES::MULTI_POINT); }
 
-// The deliberate exception to featureAvailable(): ambient sound is the only setting with a
-// read-back, so an unrecognised device does not have to be taken on trust. Either it answers
-// the NC/ASM query - and the status chip says "Confirmed" - or it does not, and the chip keeps
-// saying "not read from device". Offering it is what makes the legacy attempt worth making;
-// offering the rest would be guesswork.
+// Ambient retains the legacy read-back attempt. Other controls become available through
+// their advertised function IDs and, where needed, decoded setting capabilities.
 bool HeadphonesController::ambientAvailable()
 {
     if (!connected() || _protocol != SonyProtocol::V1) return false;
-    return _headphones.featureState(DEVICE_CAPABILITIES::NC_ASM) != CapabilityState::Unsupported;
+    return _headphones.featureState(DEVICE_CAPABILITIES::NC_ASM) != CapabilityState::Unsupported && _headphones.ambientWritable();
 }
 
-// The device can say it has a preset equalizer (51), but the preset table the UI offers is
-// model-specific (Custom 1/2 do not exist everywhere) and the EQ capability layout has not been
-// recovered. So: never where the device says there is none, and otherwise only for a model we
-// recognise.
+// A decoded capability supplies the actual presets, so renamed devices can qualify too.
+// Recognised models retain the legacy fallback until that response arrives.
 bool HeadphonesController::equalizerAvailable()
 {
-    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised
+    return connected() && _protocol == SonyProtocol::V1 && (_identity.recognised || _headphones.getEqualizerCapability().has_value())
         && _headphones.functionState(FUNCTION_TYPE::PRESET_EQ) != CapabilityState::Unsupported;
 }
 
@@ -405,11 +429,10 @@ bool HeadphonesController::spatialAvailable() { return vptAvailable() || soundPo
 bool HeadphonesController::dseeAvailable() { return functionAvailable(FUNCTION_TYPE::UPSCALING); }
 bool HeadphonesController::voiceGuidanceAvailable() { return functionAvailable(FUNCTION_TYPE::VOICE_GUIDANCE); }
 
-// Auto power-off's choices are model knowledge until its capability layout is recovered, so an
-// unrecognised device does not get it even when it advertises the function.
+// Device-reported power choices supersede the recognised-model fallback.
 bool HeadphonesController::autoPowerOffAvailable()
 {
-    return connected() && _protocol == SonyProtocol::V1 && _identity.recognised
+    return connected() && _protocol == SonyProtocol::V1 && (_identity.recognised || _headphones.getPowerOffCapability().has_value())
         && _headphones.functionState(FUNCTION_TYPE::AUTO_POWER_OFF) != CapabilityState::Unsupported;
 }
 
@@ -420,12 +443,13 @@ bool HeadphonesController::systemSettingsAvailable()
 
 QString HeadphonesController::limitedControlReason()
 {
-    if (!connected() || _protocol != SonyProtocol::V1 || _identity.recognised)
-        return QString();
+    if (!connected()) return {};
+    if (isV2()) return tr("V2 support is experimental. Only decoded, device-advertised controls are enabled.");
+    if (_identity.recognised) return {};
     if (_headphones.capabilitiesKnown())
         return tr("Aural doesn't recognise this device, so it offers only what the headphones "
-                  "report supporting. Model-specific settings such as the equalizer presets "
-                  "and auto power-off timers stay hidden.");
+                  "report supporting. Equalizer and power options become available when their "
+                  "capabilities have been read.");
     return tr("Aural doesn't recognise this device, so it only offers the control it can "
               "verify. Ambient sound reports its state back; everything else is "
               "model-specific and would be a guess.");
@@ -472,7 +496,7 @@ void HeadphonesController::pushAmbient()
         break;
     case 1: // Ambient Sound
         _headphones.setAmbientSoundControl(true);
-        _headphones.setAsmLevel(std::clamp(_asmLevel, 1, 19));
+        _headphones.setAsmLevel(std::clamp(_asmLevel, 1, std::max(1, asmMaximum())));
         break;
     default: // Off
         _headphones.setAmbientSoundControl(false);
@@ -505,7 +529,7 @@ void HeadphonesController::cycleAmbientMode()
 void HeadphonesController::setAsmLevel(int v)
 {
     if (!ambientAvailable()) return;
-    v = std::clamp(v, 1, 19);
+    v = std::clamp(v, 1, std::max(1, asmMaximum()));
     if (_asmLevel == v) return;
     _asmLevel = v;
     if (_ambientMode == 1)
@@ -515,7 +539,7 @@ void HeadphonesController::setAsmLevel(int v)
 
 void HeadphonesController::setFocusOnVoice(bool v)
 {
-    if (!ambientAvailable()) return;
+    if (!ambientAvailable() || (v && !focusOnVoiceAvailable())) return;
     if (_focusOnVoice == v) return;
     _focusOnVoice = v;
     _headphones.setFocusOnVoice(v);
@@ -539,11 +563,50 @@ bool HeadphonesController::eqManual() const { return _eqPreset == EQ_MANUAL_INDE
 bool HeadphonesController::eqBandsEditable()
 {
     const int levels = _headphones.getEqualizerLevelCount();
+    if (auto cap = _headphones.getEqualizerCapability())
+        return cap->bands == 6 && levels == 6;
     return levels < 0 || levels == 6;
+}
+
+QVariantList HeadphonesController::eqPresetOptions()
+{
+    QVariantList options;
+    const auto cap = _headphones.getEqualizerCapability();
+    for (int i = 0; i < static_cast<int>(std::size(EQ_PRESETS)); ++i)
+        if (!cap || cap->supports(static_cast<unsigned char>(EQ_PRESETS[i]))) options.push_back(i);
+    return options;
+}
+
+int HeadphonesController::eqMinimum()
+{
+    const auto cap = _headphones.getEqualizerCapability();
+    return cap ? cap->minimum() : -10;
+}
+
+int HeadphonesController::eqMaximum()
+{
+    const auto cap = _headphones.getEqualizerCapability();
+    return cap ? cap->maximum() : 10;
+}
+
+bool HeadphonesController::eqSavePending() { return _headphones.equalizerSavePending(); }
+
+bool HeadphonesController::eqCanSave()
+{
+    return equalizerAvailable() && eqBandsEditable() && _headphones.getEqualizerCapability().has_value() && !eqSavePending();
+}
+
+void HeadphonesController::saveEqToCustom(int slot)
+{
+    if (!eqCanSave() || slot < 1 || slot > 2) return;
+    const std::vector<int> bands(_eqBands.begin(), _eqBands.end());
+    if (_headphones.saveEqualizerCurve(static_cast<unsigned char>(0xA0 + slot), _eqClearBass, bands))
+        syncExtras();
 }
 
 void HeadphonesController::pushEqualizer()
 {
+    if (eqManual() && !eqBandsEditable()) return;
     // A preset the UI table does not contain (reported by the device) has nothing to push.
     if (_eqPreset < 0 || _eqPreset >= static_cast<int>(std::size(EQ_PRESETS)))
         return;
@@ -557,7 +620,10 @@ void HeadphonesController::pushEqualizer()
 void HeadphonesController::setEqPreset(int v)
 {
     if (!equalizerAvailable()) return;
+    if (eqSavePending()) return;
     if (v < 0 || v >= static_cast<int>(std::size(EQ_PRESETS)) || _eqPreset == v) return;
+    if (!eqPresetOptions().contains(v)) return;
+    if (v == EQ_MANUAL_INDEX && !eqBandsEditable()) return;
     _eqPreset = v;
     pushEqualizer();
     emit eqChanged();
@@ -565,7 +631,9 @@ void HeadphonesController::setEqPreset(int v)
 
 void HeadphonesController::setEqClearBass(int v)
 {
+    if (eqSavePending()) return;
     if (!equalizerAvailable() || !eqManual() || !eqBandsEditable()) return;
+    if (v < eqMinimum() || v > eqMaximum()) return;
     if (_eqClearBass == v) return;
     _eqClearBass = v;
     pushEqualizer();
@@ -574,7 +642,9 @@ void HeadphonesController::setEqClearBass(int v)
 
 void HeadphonesController::setEqBand(int index, int value)
 {
+    if (eqSavePending()) return;
     if (!equalizerAvailable() || !eqManual() || !eqBandsEditable()) return;
+    if (value < eqMinimum() || value > eqMaximum()) return;
     if (index < 0 || index >= 5 || _eqBands[index] == value) return;
     _eqBands[index] = value;
     pushEqualizer();
@@ -663,6 +733,12 @@ void HeadphonesController::setVoiceGuidance(bool v)
 
 QVariantList HeadphonesController::autoPowerOffOptions()
 {
+    if (auto cap = _headphones.getPowerOffCapability())
+    {
+        QVariantList options;
+        for (auto element : *cap) options.push_back(static_cast<int>(autoPowerOffMode(element)));
+        return options;
+    }
     QVariantList options = knownAutoPowerOffChoices(_identity.model);
     // Whatever the device reports holding is, by definition, a choice it supports.
     if (auto reported = _headphones.getReportedAutoPowerOffElement())
@@ -793,8 +869,9 @@ QString HeadphonesController::reconnectReason() const
 void HeadphonesController::cancelReconnect()
 {
     if (!_mpReconnect) return;
-    _mpReconnect.reset();
-    emit reconnectChanged();
+    // Stop also owns any attempt already in flight. The normal disconnect path closes
+    // its socket, invalidates the session, drains its result and clears handshake retries.
+    disconnectDevice();
 }
 
 void HeadphonesController::syncMultipoint()
@@ -970,7 +1047,7 @@ void HeadphonesController::refreshDevices()
     if (_devicesFuture.valid() || _bt.isConnected()) return;
     setConn(Conn::Discovering);
     _devicesSession = _session;
-    _devicesFuture.setFromAsync([this]() { return _bt.getConnectedDevices(); });
+    _devicesFuture.setFromAsync([this]() { return _bt.getPairedDevices(); });
 }
 
 void HeadphonesController::connectTo(const QString& mac, const QString& name)
@@ -1109,22 +1186,31 @@ void HeadphonesController::pump()
             if (!stale)
             {
                 _devices.clear();
+                QVariantList notConnected;
                 for (const auto& d : found)
                 {
                     const DeviceIdentity identity = identifyDevice(d.name);
+                    // Paired but not connected: only headphones Aural knows. Every other paired
+                    // device (mice, phones, old speakers) would only bury them.
+                    if (!d.connected && !identity.recognised)
+                        continue;
                     QVariantMap m;
                     m["name"] = QString::fromStdString(d.name);
                     m["mac"] = QString::fromStdString(d.mac);
                     m["model"] = displayModel(d.name);
                     m["recognised"] = identity.recognised;
+                    m["connected"] = d.connected;
                     const bool v2 = identity.protocol == SonyProtocol::V2;
                     m["isV2"] = v2;
                     if (!identity.recognised)
                         m["badge"] = QStringLiteral("Unrecognised - will try legacy protocol");
+                    else if (!d.connected)
+                        m["badge"] = QStringLiteral("Paired, not connected");
                     else
-                        m["badge"] = v2 ? QStringLiteral("Limited support") : QStringLiteral("Ready to connect");
-                    _devices.push_back(m);
+                        m["badge"] = v2 ? QStringLiteral("V2: discover supported controls") : QStringLiteral("Ready to connect");
+                    (d.connected ? _devices : notConnected).push_back(m);
                 }
+                _devices.append(notConnected);
                 emit devicesChanged();
             }
         }
@@ -1142,6 +1228,7 @@ void HeadphonesController::pump()
             _connectFuture.get();
             if (!stale)
             {
+                if (_bt.isConnected()) _protocol = _bt.getProtocol();
                 setConn(_bt.isConnected() ? Conn::Connected : Conn::Disconnected);
                 if (_bt.isConnected())
                     emit toast("Connected to " + deviceModel());
@@ -1210,7 +1297,7 @@ void HeadphonesController::pump()
     {
         // still sending
     }
-    else if (_bt.isConnected() && _connectionInitialized && _protocol == SonyProtocol::V1)
+    else if (_bt.isConnected() && _connectionInitialized)
     {
         if (_headphones.hasPendingQueries())
         {
@@ -1238,7 +1325,7 @@ void HeadphonesController::pump()
 
     if (_bt.isConnected())
     {
-        if (_protocol == SonyProtocol::V1) pollOsBattery();
+        pollOsBattery();
         emitLiveDeltas();
     }
 
@@ -1280,6 +1367,9 @@ void HeadphonesController::refreshSettingStatus()
     QVariantMap next = statusMap(_headphones.getStatuses());
     if (next != _settingStatus)
     {
+        for (auto it = next.cbegin(); it != next.cend(); ++it)
+            if (it.value() == QStringLiteral("failed") && _settingStatus.value(it.key()) != it.value())
+                emit toast(tr("Could not apply %1. Check the connection and choose the setting again to retry.").arg(settingLabel(it.key())));
         _settingStatus = next;
         emit settingStatusChanged();
     }
@@ -1336,6 +1426,7 @@ void HeadphonesController::emitLiveDeltas()
     syncReadBack(_headphones.getStatuses());
     syncControls();
     syncMultipoint();
+    syncExtras();
 
     // Multipoint list (device-driven)
     if (supportsMultipoint())
@@ -1351,6 +1442,196 @@ void HeadphonesController::emitLiveDeltas()
         add(conn.first, 1);
         add(conn.second, 2);
         if (list != _mpDevices) { _mpDevices = list; emit multipointChanged(); }
+    }
+}
+
+void HeadphonesController::setConnectionPreference(int value)
+{
+    if (!connected() || _protocol != SonyProtocol::V1 || value < 0 || value > 1) return;
+    if (_headphones.setConnectionMode(static_cast<SonyAudio::ConnectionMode>(value))) syncExtras();
+}
+
+void HeadphonesController::setButtonAssignment(int keyIndex, int presetId)
+{
+    if (!connected() || _protocol != SonyProtocol::V1 || keyIndex < 0 || presetId < 0 || presetId > 255) return;
+    if (_headphones.setAssignment(static_cast<size_t>(keyIndex), static_cast<unsigned char>(presetId))) syncExtras();
+}
+
+void HeadphonesController::syncExtras()
+{
+    QVariantMap v2;
+    if (connected() && isV2()) {
+        const auto snapshot = _headphones.getV2Snapshot();
+        v2["phase"] = QString::fromStdString(snapshot.phase);
+        v2["message"] = snapshot.phase == "ready" ? tr("Discovery complete. Controls are enabled only when the headphones report them available.") :
+            snapshot.phase == "unsupported-version" ? tr("This protocol version is not supported. Settings remain unavailable.") :
+            snapshot.phase == "reply-timeout" ? tr("The headphones did not return the required discovery information.") : tr("Reading the headphones' capabilities...");
+        if (snapshot.protocol) v2["version"] = QStringLiteral("0x") + QString::number(snapshot.protocol->version, 16).rightJustified(8, '0');
+        QStringList functionLabels;
+        for (size_t table = 0; table < snapshot.functions.size(); ++table)
+            if (snapshot.functions[table]) for (const auto& fn : snapshot.functions[table]->functions)
+                functionLabels << QStringLiteral("T%1:%2 (%3)").arg(table + 1).arg(fn.id, 2, 16, QLatin1Char('0')).arg(fn.order);
+        v2["functions"] = functionLabels.join(QStringLiteral(", "));
+        QVariantList audio;
+        for (const auto& view : snapshot.audio) {
+            audio.push_back(QVariantMap{{"selector", view.capability.selector}, {"value", view.value}, {"ready", view.writable}, {"status", statusName(view.status)},
+                {"title", view.capability.selector == 0 ? tr("Connection preference") : tr("DSEE")}});
+        }
+        v2["audio"] = audio;
+        if (snapshot.codec) {
+            static const QMap<int, QString> codecs {{0,"Not settled"},{1,"SBC"},{2,"AAC"},{0x10,"LDAC"},{0x20,"aptX"},{0x21,"aptX HD"},{0x30,"LC3"},{0xff,"Other"}};
+            v2["codec"] = codecs.value(snapshot.codec->codec);
+        }
+        if (snapshot.effect) v2["effect"] = snapshot.effect->status == 0 ? tr("Off") : snapshot.effect->status == 1 ? tr("Active") : tr("Inactive");
+        QVariantList equalizers;
+        for (const auto& eq : snapshot.equalizers) {
+            QVariantMap row;
+            row["selector"] = eq.capability.selector;
+            row["bandCount"] = eq.capability.bands;
+            row["read"] = eq.reported.has_value();
+            row["bandsEditable"] = eq.bandsEditable;
+            const int midpoint = (eq.capability.levelSteps - 1) / 2;
+            row["minimum"] = -midpoint;
+            row["maximum"] = eq.capability.levelSteps - 1 - midpoint;
+            QVariantList bands;
+            if (eq.metadata && eq.metadata->bands.size() == eq.levels.size()) {
+                for (size_t i = 0; i < eq.levels.size(); ++i) {
+                    const auto& descriptor = eq.metadata->bands[i];
+                    QString label = descriptor.kind == 1 ? tr("%1 Hz").arg(descriptor.value) : descriptor.kind == 2 ? tr("%1 kHz").arg(descriptor.value) : descriptor.kind == 0x10 && descriptor.value == 1 ? tr("Clear Bass") : tr("Unknown band");
+                    bands.push_back(QVariantMap{{"index", static_cast<int>(i)}, {"label", label}, {"value", eq.levels[i] - midpoint}});
+                }
+            }
+            row["bands"] = bands;
+            row["ready"] = eq.writable;
+            row["status"] = statusName(eq.status);
+            row["title"] = eq.capability.selector == 0 ? tr("Equalizer presets") : tr("Custom equalizer");
+            QVariantList names, ids;
+            int selected = -1;
+            for (const auto& preset : eq.capability.presets) {
+                QString name = QString::fromStdString(preset.name);
+                if (name.isEmpty()) {
+                    static const QMap<int, QString> defaults {{0,"Off"},{0x10,"Bright"},{0x11,"Excited"},{0x12,"Mellow"},{0x13,"Relaxed"},{0x14,"Vocal"},{0x15,"Treble Boost"},{0x16,"Bass Boost"},{0x17,"Speech"},{0xa0,"Manual"},{0xa1,"Custom 1"},{0xa2,"Custom 2"}};
+                    name = defaults.value(preset.id, tr("Preset %1").arg(preset.id));
+                }
+                if (eq.selectedPreset == preset.id) selected = static_cast<int>(ids.size());
+                names.push_back(name); ids.push_back(preset.id);
+            }
+            row["names"] = names; row["presetIds"] = ids; row["selected"] = selected;
+            equalizers.push_back(row);
+        }
+        v2["equalizers"] = equalizers;
+        QVariantList ambient;
+        for (const auto& view : snapshot.ambient) {
+            QVariantMap row;
+            row["selector"] = view.capability.selector;
+            row["ready"] = view.writable;
+            row["status"] = statusName(view.status);
+            const auto state = view.displayed ? view.displayed : view.reported;
+            row["mode"] = state ? static_cast<int>(state->mode()) : -1;
+            row["voice"] = state && state->asmId == 1;
+            row["voiceSupported"] = view.capability.range(1) != nullptr;
+            const auto range = view.capability.range(state ? state->asmId : 0);
+            row["minimum"] = range ? range->minimum : 1;
+            row["maximum"] = range ? range->maximum : 1;
+            row["step"] = range ? range->step : 1;
+            row["level"] = range && state ? std::clamp<int>(state->level, range->minimum, range->maximum) : 1;
+            ambient.push_back(row);
+        }
+        v2["ambient"] = ambient;
+    }
+    if (v2 != _v2Info) { _v2Info = v2; emit extrasChanged(); }
+    const auto info = diagnostics();
+    if (info != _lastDiagnostics) {
+        const bool modelChanged = info.value("reportedModel") != _lastDiagnostics.value("reportedModel");
+        _lastDiagnostics = info; emit diagnosticsChanged();
+        if (modelChanged) emit connectionChanged();
+    }
+    const auto statuses = _headphones.getStatuses();
+    QVariantMap audio;
+    audio["offered"] = connected() && _protocol == SonyProtocol::V1 &&
+        _headphones.functionState(FUNCTION_TYPE::CONNECTION_MODE) == CapabilityState::Supported;
+    audio["ready"] = connected() && _headphones.connectionModeReady();
+    const auto pendingMode = _headphones.pendingConnectionMode();
+    const auto mode = pendingMode ? pendingMode : _headphones.getConnectionMode();
+    audio["value"] = mode ? static_cast<int>(*mode) : -1;
+    audio["status"] = statusName(statuses.connectionMode);
+    QString codec = tr("Not reported");
+    if (auto value = _headphones.getCodec())
+        switch (*value) {
+        case 0: codec = tr("Not negotiated"); break;
+        case 1: codec = QStringLiteral("SBC"); break;
+        case 2: codec = QStringLiteral("AAC"); break;
+        case 0x10: codec = QStringLiteral("LDAC"); break;
+        case 0x20: codec = QStringLiteral("aptX"); break;
+        case 0x21: codec = QStringLiteral("aptX HD"); break;
+        default: codec = tr("Other"); break;
+        }
+    audio["codec"] = codec;
+    const auto activity = _headphones.getDseeActivity();
+    audio["dseeActivity"] = !activity ? tr("Not reported") :
+        activity->status == 1 ? tr("Processing") : tr("Not processing");
+    audio["dseeActivityKnown"] = activity.has_value();
+
+    QVariantList rows;
+    if (auto cap = _headphones.getAssignmentCapability())
+    {
+        const auto pendingValues = _headphones.pendingAssignments();
+        const auto values = pendingValues ? pendingValues : _headphones.getAssignments();
+        const auto available = _headphones.getAssignmentAvailability();
+        for (size_t i = 0; i < cap->keys.size(); ++i)
+        {
+            const auto& key = cap->keys[i];
+            QVariantMap row;
+            row["keyIndex"] = static_cast<int>(i);
+            row["title"] = QString::fromUtf8(SonyAssignment::keyName(key.id));
+            row["ready"] = connected() && values && available && i < values->size() && i < available->size() && (*available)[i];
+            row["status"] = statusName(statuses.assignment);
+            QVariantList labels, ids;
+            int selected = -1;
+            QStringList actions;
+            for (size_t j = 0; j < key.presets.size(); ++j)
+            {
+                const auto& preset = key.presets[j];
+                labels.push_back(QString::fromUtf8(SonyAssignment::presetName(preset.id)));
+                ids.push_back(preset.id);
+                if (values && i < values->size() && (*values)[i] == preset.id)
+                {
+                    selected = static_cast<int>(j);
+                    for (const auto& action : preset.actions)
+                        actions.push_back(QString::fromUtf8(SonyAssignment::actionName(action.action)) +
+                            QStringLiteral(": ") + QString::fromUtf8(SonyAssignment::functionName(action.function)));
+                }
+            }
+            row["labels"] = labels;
+            row["presetIds"] = ids;
+            row["selected"] = selected;
+            row["summary"] = actions.join(QStringLiteral("\n"));
+            rows.push_back(row);
+        }
+    }
+    if (audio != _audioInfo || rows != _buttonAssignments)
+    {
+        _audioInfo = audio;
+        _buttonAssignments = rows;
+        emit extrasChanged();
+    }
+    QVariantMap signature;
+    signature["ambientReady"] = _headphones.ambientWritable();
+    signature["ambientMax"] = asmMaximum();
+    signature["eqOptions"] = eqPresetOptions();
+    signature["eqMin"] = eqMinimum();
+    signature["eqMax"] = eqMaximum();
+    signature["eqEditable"] = eqBandsEditable();
+    signature["eqSavePending"] = eqSavePending();
+    signature["eqKnown"] = _headphones.getEqualizerCapability().has_value();
+    signature["powerKnown"] = _headphones.getPowerOffCapability().has_value();
+    signature["powerOptions"] = autoPowerOffOptions();
+    if (signature != _extraSignature)
+    {
+        _extraSignature = signature;
+        emit eqChanged();
+        emit ambientChanged();
+        emit capabilitiesChanged();
     }
 }
 
@@ -1447,7 +1728,6 @@ void HeadphonesController::handleConnectionSetup()
     _osBatteryLevel = -1;
     _lastOsBatteryPollMs = -100000;
 
-    if (_protocol == SonyProtocol::V2) return; // v2 control not implemented yet
 
     _listener = std::make_unique<Listener>(_headphones, _bt);
     // Runs on the reader thread: record it and let pump() (Qt thread) own the teardown.
@@ -1575,6 +1855,7 @@ void HeadphonesController::resetUiState()
     _mpDevices.clear();
     _settingStatus = statusMap(SettingsStatus{});
 
+    syncExtras();
     emit ambientChanged();
     emit eqChanged();
     emit spatialChanged();
@@ -1588,4 +1869,88 @@ void HeadphonesController::resetUiState()
     emit optimizerChanged();
     emit settingStatusChanged();
     emit connectionChanged();
+}
+
+QVariantMap HeadphonesController::diagnostics()
+{
+    QVariantMap result;
+#ifdef AURAL_VERSION
+    result["appVersion"] = QStringLiteral(AURAL_VERSION);
+    result["sourceRevision"] = QStringLiteral(AURAL_BUILD_REVISION);
+    result["sourceModified"] = AURAL_BUILD_MODIFIED != 0;
+#else
+    result["appVersion"] = QStringLiteral("test/unknown");
+#endif
+    result["connected"] = connected();
+    result["bluetoothName"] = deviceName();
+    result["reportedModel"] = QString::fromStdString(_headphones.reportedModel());
+    result["firmware"] = QString::fromStdString(_headphones.firmwareVersion());
+    result["protocol"] = !connected() ? tr("Disconnected") : isV2() ? tr("V2") : tr("V1");
+    result["protocolSource"] = !connected() ? tr("Not connected") : _bt.protocolDiscovered() ? tr("Windows service cache") : tr("Bluetooth-name fallback; service not identified");
+    result["capabilitiesKnown"] = capabilitiesKnown();
+    if (isV2()) { result["v2Phase"] = _v2Info.value("phase"); result["v2Functions"] = _v2Info.value("functions"); result["v2Version"] = _v2Info.value("version"); }
+    QStringList functions;
+    for (auto id : _headphones.supportedFunctions()) functions << QString::number(id, 16).rightJustified(2, '0').toUpper();
+    result["functions"] = isV2() ? _v2Info.value("functions").toString() : functions.join(' ');
+    result["validation"] = _identity.model == SonyModel::WH_1000XM4 ? tr("XM4: hardware evidence available") :
+        isV2() ? tr("V2 experimental: static protocol evidence; no model-specific hardware validation") : tr("Capability-based V1 support; this model is not hardware-validated");
+    return result;
+}
+
+QString HeadphonesController::exportDiagnostics()
+{
+    auto report = diagnostics();
+    report["settings"] = _settingStatus;
+    report["audio"] = _audioInfo;
+    report["v2"] = _v2Info;
+    report["createdUtc"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
+    report["recentProtocolLog"] = QString::fromStdString(ProtocolTrace::recentLog());
+    const QString directory = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation) + QStringLiteral("/Aural Diagnostics");
+    const QString path = directory + QStringLiteral("/aural-") + QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".json");
+    const auto data = QJsonDocument(QJsonObject::fromVariantMap(report)).toJson();
+    QSaveFile file(path);
+    if (!QDir().mkpath(directory) || !file.open(QIODevice::WriteOnly) || file.write(data) != data.size() || !file.commit())
+    {
+        emit errorOccurred(tr("Could not save diagnostics. Check that Documents is writable."));
+        return {};
+    }
+    emit toast(tr("Diagnostics saved to %1").arg(path));
+    return path;
+}
+
+int HeadphonesController::asmMaximum() { return _headphones.ambientMaximum(_focusOnVoice); }
+void HeadphonesController::setV2EqPreset(int selector, int preset)
+{
+    if (!connected() || !isV2() || selector < 0 || selector > 255 || preset < 0 || preset > 255) return;
+    if (_headphones.setV2EqPreset(static_cast<unsigned char>(selector), static_cast<unsigned char>(preset))) syncExtras();
+}
+
+void HeadphonesController::setV2Ambient(int selector, int mode, int level, bool voice)
+{
+    if (!connected() || !isV2() || selector < 0 || selector > 255 || mode < 0 || mode > 2) return;
+    const auto snapshot = _headphones.getV2Snapshot();
+    for (const auto& view : snapshot.ambient) if (view.capability.selector == selector) {
+        if (const auto range = view.capability.range(voice ? 1 : 0)) {
+            level = std::clamp<int>(level, range->minimum, range->maximum);
+            level = range->minimum + ((level - range->minimum) / range->step) * range->step;
+        }
+    }
+    if (_headphones.setV2Ambient(static_cast<unsigned char>(selector), static_cast<SonyV2Ambient::Mode>(mode), level, voice)) syncExtras();
+}
+
+void HeadphonesController::setV2EqBand(int selector, int band, int value)
+{
+    if (!connected() || !isV2() || selector < 0 || selector > 255 || band < 0) return;
+    if (_headphones.setV2EqBand(static_cast<unsigned char>(selector), static_cast<size_t>(band), value)) syncExtras();
+}
+
+void HeadphonesController::refreshV2Values()
+{
+    if (connected() && isV2()) _headphones.refreshV2Values();
+}
+
+void HeadphonesController::setV2Audio(int selector, int value)
+{
+    if (!connected() || !isV2() || selector < 0 || selector > 1 || value < 0 || value > 1) return;
+    if (_headphones.setV2Audio(static_cast<unsigned char>(selector), static_cast<unsigned char>(value))) syncExtras();
 }

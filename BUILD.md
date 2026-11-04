@@ -30,6 +30,29 @@ actual Qt location. The October verification used
 
 ## Configure and build
 
+### Headless, read-only XM4 capture
+
+This standalone Windows console tool uses the real engine without Qt or any visible application
+window when invoked through a background command runner. Close Aural before using it. `--list`
+enumerates devices; `--read` requires an already connected device named exactly WH-1000XM4 and
+its enumerated MAC address. It sends initialization and GET requests, never settings writes.
+It closes only its own RFCOMM control connection when finished. Traces contain device addresses
+and may contain paired-device names; keep raw captures local.
+
+```powershell
+cmake -S Client/tools/headset_probe -B build/headset-probe -G "Visual Studio 17 2022" -A x64
+cmake --build build/headset-probe --config Debug
+./build/headset-probe/Debug/headset_probe.exe --list
+$env:AURAL_TRACE = "$PWD/build/headset-probe/capture.log"
+./build/headset-probe/Debug/headset_probe.exe --read '<address from --list>'
+```
+
+Raw replies to model, firmware, EQ capability and power-off capability requests are retained in
+the trace even when the current engine has no decoder. The final summary is not a substitute
+for checking each expected reply in that trace. A missing reply remains unknown, even if ACKed.
+
+### Qt application
+
 Run from the repository root. The build directory is deliberately outside
 `Client/qt` and is named `build/...` so it is covered by `.gitignore`.
 
@@ -162,3 +185,21 @@ build with no `.git` reports `unknown` rather than guessing. See
 CMake caches absolute source paths. After moving the checkout, configure
 a new build directory instead of reusing a cache from its old location.
 
+### Diagnostics and additional V1 captures
+
+System > Device diagnostics shows the model and firmware reported by the headset,
+protocol, and advertised function IDs. Export diagnostics writes a JSON file into
+`Documents/Aural Diagnostics`, with build identity, setting status, and the latest
+256 process log entries (up to 8192 characters each). Continuous disk tracing still
+requires `AURAL_TRACE`. Exports can contain names and Bluetooth addresses; inspect
+before sharing. Export does not query or change the headphones.
+
+The headless probe also accepts `headset_probe --read-v1 MAC` for an explicitly
+chosen, already-connected legacy device, including a renamed device. The connector
+now prefers the Windows enabled-service cache over the model fallback. If the
+selected service is V2, the probe uses V2 discovery and never sends V1 extras.
+`headset_probe --read-v2 MAC` explicitly selects the V2 fallback for an already
+connected device; a discovered V1 service is rejected in this mode. These modes
+query state only. Preserve each
+new capture with its reported model/firmware and distinguish synthetic test profiles
+from hardware evidence. `--read MAC` retains the XM4-only guard.

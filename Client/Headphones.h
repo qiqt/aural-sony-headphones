@@ -2,8 +2,19 @@
 
 #include "BluetoothWrapper.h"
 #include "Constants.h"
+#include "AudioProtocol.h"
+#include "EqualizerProtocol.h"
+#include "AssignmentProtocol.h"
+#include "V2Protocol.h"
+#include "AmbientProtocol.h"
+#include "V2AmbientProtocol.h"
+#include "V2AudioProtocol.h"
+#include <array>
+#include <condition_variable>
+#include <map>
 
 #include <bitset>
+#include <chrono>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -175,6 +186,8 @@ struct SettingsStatus {
 	SettingStatus touchPanel = SettingStatus::Unknown;
 	SettingStatus wearingControl = SettingStatus::Unknown;
 	SettingStatus multipointMode = SettingStatus::Unknown;    // the multipoint on/off setting
+	SettingStatus connectionMode = SettingStatus::Unknown;
+	SettingStatus assignment = SettingStatus::Unknown;
 };
 
 // Whether the device said it supports a feature. Unknown is not "supported": it means the
@@ -234,9 +247,53 @@ struct MultipointChange
 // Thread-safety: every accessor takes _propertyMtx. setChanges() snapshots under the lock,
 // releases it while the frame is on the wire, then re-takes it to record the result - the
 // Listener thread must be able to apply incoming replies while a send is in flight.
+// V2 state is separate from the legacy function-ID namespace. The controller can
+// render a snapshot without interpreting wire bytes or changing the selected generation.
+struct V2EqualizerView {
+    SonyV2::EqCapability capability;
+    std::optional<SonyV2::EqState> reported;
+    std::optional<bool> available;
+    int selectedPreset = -1;
+    bool writable = false;
+    bool bandsEditable = false;
+    std::optional<SonyV2::EqBandMetadata> metadata;
+    std::vector<unsigned char> levels;
+    SettingStatus status = SettingStatus::Unknown;
+};
+struct V2AmbientView {
+    SonyV2Ambient::Capability capability;
+    std::optional<SonyV2Ambient::State> reported;
+    std::optional<SonyV2Ambient::State> displayed;
+    bool writable = false;
+    SettingStatus status = SettingStatus::Unknown;
+};
+struct V2AudioView {
+    SonyV2::AudioCapability capability;
+    int value = -1;
+    bool writable = false;
+    SettingStatus status = SettingStatus::Unknown;
+};
+struct V2Snapshot {
+    std::string phase = "idle";
+    std::optional<SonyV2::ProtocolInfo> protocol;
+    std::optional<SonyV2::CapabilityInfo> capability;
+    std::array<std::optional<SonyV2::SupportedFunctions>, 2> functions;
+    std::vector<V2EqualizerView> equalizers;
+    std::vector<V2AmbientView> ambient;
+    std::vector<V2AudioView> audio;
+    std::optional<SonyV2::CodecStatus> codec;
+    std::optional<SonyV2::UpscalingEffect> effect;
+};
+
 class Headphones {
 public:
 	Headphones(BluetoothWrapper& conn);
+    V2Snapshot getV2Snapshot();
+    void refreshV2Values();
+    bool setV2Audio(unsigned char selector, unsigned char value);
+    bool setV2EqPreset(unsigned char selector, unsigned char preset);
+    bool setV2EqBand(unsigned char selector, size_t index, int signedStep);
+    bool setV2Ambient(unsigned char selector, SonyV2Ambient::Mode mode, int level, bool voice);
 
 	void setAmbientSoundControl(bool val);
 	bool getAmbientSoundControl();
@@ -272,13 +329,31 @@ public:
 
 	// The last complete NC/ASM report, every field kept. Empty until the device sends one.
 	std::optional<CommandSerializer::NcAsmReport> getNcAsmReport();
+    std::optional<SonyAmbient::Capability> getAmbientCapability();
+    bool ambientWritable();
+    int ambientMaximum(bool voice);
 
 	// Equalizer
 	void setEqualizer(const EqualizerConfig& cfg);
+	bool saveEqualizerCurve(unsigned char targetPreset, int clearBass, const std::vector<int>& bands);
+	bool equalizerSavePending();
 	EqualizerConfig getEqualizer();
 	// How many level bytes the device's last EQ report carried; -1 until it sends one. The
 	// band editor only fits a device that reports clear bass + 5 bands (6).
 	int getEqualizerLevelCount();
+	std::optional<SonyEq::Capability> getEqualizerCapability();
+	std::optional<std::vector<unsigned char>> getPowerOffCapability();
+	bool connectionModeReady();
+	bool setConnectionMode(SonyAudio::ConnectionMode mode);
+	std::optional<SonyAudio::ConnectionMode> getConnectionMode();
+	std::optional<unsigned char> getCodec();
+	std::optional<SonyAudio::DseeActivity> getDseeActivity();
+	std::optional<SonyAssignment::Capability> getAssignmentCapability();
+	std::optional<std::vector<unsigned char>> getAssignments();
+	std::optional<std::vector<unsigned char>> pendingAssignments();
+	std::optional<SonyAudio::ConnectionMode> pendingConnectionMode();
+	std::optional<std::vector<bool>> getAssignmentAvailability();
+	bool setAssignment(size_t index, unsigned char preset);
 
 	// DSEE / DSEE Extreme upscaling
 	void setAudioUpsampling(bool val);
@@ -361,6 +436,8 @@ public:
 	// Replies arrive asynchronously and are applied via setStateFromReply(). Throws when the
 	// headphones leave a command unacknowledged: the session cannot continue after that.
 	void queryState();
+	std::string reportedModel();
+	std::string firmwareVersion();
 
 	// Follow-up requests that replies made necessary (capability details, availability and value
 	// reads). The Listener only ever enqueues them: it must stay free to read the ACKs those
@@ -421,7 +498,15 @@ private:
 	void _disconnectDevice(int deviceIdx);
 
 	// Reply handlers, one per table. Each decodes first and only then takes the lock.
-	void _applyTable1(const CommandSerializer::Message& msg);
+	void _applyV2(const CommandSerializer::Message& msg);
+    void _queryV2State();
+    void _pushV2Changes();
+    bool _v2AudioReadyLocked(unsigned char selector) const;
+    bool _v2SupportsLocked(unsigned char id) const;
+    bool _v2EqReadyLocked(unsigned char selector) const;
+    bool _v2CurveReadyLocked(unsigned char selector) const;
+    bool _v2AmbientReadyLocked(unsigned char selector) const;
+    void _applyTable1(const CommandSerializer::Message& msg);
 	void _applyTable2(const CommandSerializer::Message& msg);
 	void _applySupportedFunctions(const std::vector<unsigned char>& ids);
 	void _applyGeneralSettingCapability(const CommandSerializer::GeneralSettingCapability& cap);
@@ -507,17 +592,57 @@ private:
 	Property<int> _dev1, _dev2;
 
 	Property<EqualizerConfig> _eq;
+	enum class EqSaveStep { Idle, Select, WaitSelection, Curve, WaitCurve };
+	EqSaveStep _eqSaveStep = EqSaveStep::Idle;
+	EqualizerConfig _eqSaveTarget;
+	std::chrono::steady_clock::time_point _eqSaveDeadline;
+	unsigned long long _eqSaveToken = 0;
+	void _sendEqualizerSave();
+	void _expireEqualizerSaveLocked();
 	int _eqLevelCount = -1;
 
 	// Last complete NC/ASM report; the three ambient properties hold its normalised form.
 	std::optional<CommandSerializer::NcAsmReport> _ncAsmReport;
+    std::optional<SonyAmbient::Capability> _ambientCapability;
 
 	// Read back when the device advertises them; Acknowledged at best when it does not.
 	Property<bool> _audioUpsampling;
+	std::optional<SonyEq::Capability> _eqCapability;
+	std::optional<std::vector<unsigned char>> _powerOffCapability;
+	bool _connectionModeCapable = false;
+	std::optional<bool> _connectionModeAvailable;
+	Property<SonyAudio::ConnectionMode> _connectionMode;
+	std::optional<unsigned char> _codec;
+	std::string _reportedModel, _firmwareVersion;
+	std::optional<SonyAudio::DseeActivity> _dseeActivity;
+	std::optional<SonyAssignment::Capability> _assignmentCapability;
+	std::optional<std::vector<bool>> _assignmentAvailable;
+	Property<std::vector<unsigned char>> _assignments;
 	Property<bool> _voiceGuidance;
 	Property<AutoPowerOffConfig> _autoPowerOff;
 
-	std::mutex _propertyMtx;
+	std::string _v2Phase = "idle";
+    std::optional<SonyV2::ProtocolInfo> _v2Protocol;
+    std::optional<SonyV2::CapabilityInfo> _v2Capability;
+    std::array<std::optional<SonyV2::SupportedFunctions>, 2> _v2Functions;
+    std::map<unsigned char, SonyV2::EqCapability> _v2EqCapabilities;
+    std::map<unsigned char, SonyV2::EqState> _v2EqReports;
+    std::map<unsigned char, bool> _v2EqAvailable;
+    std::map<unsigned char, SonyV2::EqBandMetadata> _v2EqMetadata;
+    std::map<unsigned char, Property<std::vector<unsigned char>>> _v2EqCurves;
+    std::map<unsigned char, Property<int>> _v2EqPresets;
+    std::map<unsigned char, SonyV2Ambient::Capability> _v2AmbientCapabilities;
+    std::map<unsigned char, SonyV2Ambient::State> _v2AmbientReports;
+    std::map<unsigned char, bool> _v2AmbientAvailable;
+    std::map<unsigned char, Property<SonyV2Ambient::State>> _v2AmbientValues;
+    std::map<unsigned char, SonyV2::AudioCapability> _v2AudioCapabilities;
+    std::map<unsigned char, SonyV2::AudioState> _v2AudioReports;
+    std::map<unsigned char, bool> _v2AudioAvailable;
+    std::map<unsigned char, Property<int>> _v2AudioValues;
+    std::optional<SonyV2::CodecStatus> _v2Codec;
+    std::optional<SonyV2::UpscalingEffect> _v2Effect;
+    std::condition_variable _v2Reply;
+    std::mutex _propertyMtx;
 
 	BluetoothWrapper& _conn;
 };

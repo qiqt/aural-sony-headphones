@@ -107,9 +107,9 @@ Item {
                             id: asmSlider
                             Layout.fillWidth: true
                             from: 1
-                            to: 19
+                            to: Math.max(1, Hp.asmMaximum)
                             stepSize: 1
-                            enabled: Hp.ambientMode === 1
+                            enabled: Hp.ambientMode === 1 && Hp.asmMaximum > 1
                             onMoved: Hp.asmLevel = Math.round(value)
                             // Survives interactive drags; a plain `value:` binding would not.
                             Binding on value { value: Hp.asmLevel }
@@ -160,7 +160,7 @@ Item {
                             Layout.fillWidth: true
                             text: Hp.focusOnVoiceAvailable
                                   ? "Prioritise human voices while suppressing background noise."
-                                  : "Available in Ambient Sound at level 3 and up."
+                                  : "Unavailable for the current ambient mode or device."
                             color: Theme.textSecondary
                             font.pixelSize: Theme.bodyMd
                             wrapMode: Text.WordWrap

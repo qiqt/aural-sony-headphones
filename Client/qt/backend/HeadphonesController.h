@@ -34,6 +34,9 @@ class HeadphonesController : public QObject
     Q_OBJECT
 
     // Connection
+    Q_PROPERTY(QVariantMap v2Info READ v2Info NOTIFY extrasChanged)
+    Q_PROPERTY(int asmMaximum READ asmMaximum NOTIFY ambientChanged)
+    Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(bool discovering READ discovering NOTIFY connectionChanged)
     Q_PROPERTY(bool connecting READ connecting NOTIFY connectionChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectionChanged)
@@ -105,6 +108,11 @@ class HeadphonesController : public QObject
     Q_PROPERTY(bool eqManual READ eqManual NOTIFY eqChanged)
     // False once the device reports a band layout other than clear bass + 5 bands.
     Q_PROPERTY(bool eqBandsEditable READ eqBandsEditable NOTIFY eqChanged)
+    Q_PROPERTY(QVariantList eqPresetOptions READ eqPresetOptions NOTIFY eqChanged)
+    Q_PROPERTY(int eqMinimum READ eqMinimum NOTIFY eqChanged)
+    Q_PROPERTY(int eqMaximum READ eqMaximum NOTIFY eqChanged)
+    Q_PROPERTY(bool eqSavePending READ eqSavePending NOTIFY eqChanged)
+    Q_PROPERTY(bool eqCanSave READ eqCanSave NOTIFY eqChanged)
 
     // Spatial sound (mutually exclusive)
     Q_PROPERTY(int soundPosition READ soundPosition WRITE setSoundPosition NOTIFY spatialChanged)
@@ -118,12 +126,13 @@ class HeadphonesController : public QObject
 
     // System / sound quality. Values follow the device's read-back when it gives one.
     Q_PROPERTY(bool dsee READ dsee WRITE setDsee NOTIFY systemChanged)
+    Q_PROPERTY(QVariantMap audioInfo READ audioInfo NOTIFY extrasChanged)
+    Q_PROPERTY(QVariantList buttonAssignments READ buttonAssignments NOTIFY extrasChanged)
     Q_PROPERTY(bool voiceGuidance READ voiceGuidance WRITE setVoiceGuidance NOTIFY systemChanged)
     // An AUTO_POWER_OFF value: 0 off, 1-4 timers, 5 when taken off.
     Q_PROPERTY(int autoPowerOff READ autoPowerOff WRITE setAutoPowerOff NOTIFY systemChanged)
-    // The AUTO_POWER_OFF values this device offers: the model's known choices plus whatever the
-    // device itself has reported. Nothing outside this list is sent. Moves with the connection
-    // (the model) and with a reported element, both of which emit capabilitiesChanged.
+    // Device-advertised choices take precedence; model/current-state fallback until decoded.
+    // Nothing outside this list is sent. Updated as capabilities arrive or the session resets.
     Q_PROPERTY(QVariantList autoPowerOffOptions READ autoPowerOffOptions NOTIFY capabilitiesChanged)
 
     // Controls the headphones have to describe before the app may touch them. Each is a map:
@@ -169,11 +178,20 @@ public:
                                   QObject* parent);
     ~HeadphonesController() override;
 
+    QVariantMap diagnostics();
+    QVariantMap v2Info() const { return _v2Info; }
+    int asmMaximum();
+    Q_INVOKABLE void refreshV2Values();
+    Q_INVOKABLE void setV2Audio(int selector, int value);
+    Q_INVOKABLE void setV2EqPreset(int selector, int preset);
+    Q_INVOKABLE void setV2EqBand(int selector, int band, int value);
+    Q_INVOKABLE void setV2Ambient(int selector, int mode, int level, bool voice);
+    Q_INVOKABLE QString exportDiagnostics();
     bool discovering() const { return _conn == Conn::Discovering; }
     bool connecting() const { return _conn == Conn::Connecting; }
     bool connected() const { return _conn == Conn::Connected; }
     QString deviceName() const;
-    QString deviceModel() const;
+    QString deviceModel();
     bool modelRecognised() const;
     bool isV2() const { return _protocol == SonyProtocol::V2; }
     QVariantList devices() const { return _devices; }
@@ -214,6 +232,12 @@ public:
     QVariantList eqBands() const;
     bool eqManual() const;
     bool eqBandsEditable();
+    QVariantList eqPresetOptions();
+    int eqMinimum();
+    int eqMaximum();
+    bool eqSavePending();
+    bool eqCanSave();
+    Q_INVOKABLE void saveEqToCustom(int slot);
     void setEqPreset(int v);
     void setEqClearBass(int v);
 
@@ -238,6 +262,10 @@ public:
     void setDsee(bool v);
     void setVoiceGuidance(bool v);
     void setAutoPowerOff(int v);
+    QVariantMap audioInfo() const { return _audioInfo; }
+    QVariantList buttonAssignments() const { return _buttonAssignments; }
+    Q_INVOKABLE void setConnectionPreference(int value);
+    Q_INVOKABLE void setButtonAssignment(int keyIndex, int presetId);
 
     QVariantMap touchPanel() const { return _touchPanel; }
     QVariantMap wearingControl() const { return _wearingControl; }
@@ -269,6 +297,8 @@ public:
     Q_INVOKABLE void cycleAmbientMode();
 
 signals:
+    void diagnosticsChanged();
+    void extrasChanged();
     void connectionChanged();
     void devicesChanged();
     void syncingChanged();
@@ -289,6 +319,12 @@ signals:
     void toast(const QString& message);
 
 private:
+    void syncExtras();
+    QVariantMap _v2Info;
+    QVariantMap _lastDiagnostics;
+    QVariantMap _audioInfo;
+    QVariantList _buttonAssignments;
+    QVariantMap _extraSignature;
     enum class Conn { Disconnected, Discovering, Connecting, Connected };
 
     void init();

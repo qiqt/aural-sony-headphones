@@ -18,7 +18,7 @@ Item {
 
         Rectangle {
             id: highlight
-            visible: root.options.length > 0
+            visible: root.currentIndex >= 0 && root.currentIndex < root.options.length
             width: root.options.length > 0 ? (bg.width - 8) / root.options.length : 0
             height: bg.height - 8
             y: 4

@@ -24,7 +24,8 @@ bool Headphones::getAmbientSoundControl()
 bool Headphones::isFocusOnVoiceAvailable()
 {
 	std::lock_guard guard(this->_propertyMtx);
-	return this->_ambientSoundControl.current && this->_asmLevel.current > MINIMUM_VOICE_FOCUS_STEP;
+	if (_ambientCapability) return _ambientCapability->supports(1) && _ambientSoundControl.current && _asmLevel.current > 0;
+    return this->_ambientSoundControl.current && this->_asmLevel.current > MINIMUM_VOICE_FOCUS_STEP;
 }
 
 void Headphones::setFocusOnVoice(bool val)
@@ -557,6 +558,8 @@ SettingsStatus Headphones::getStatuses()
 	s.touchPanel = this->_touchPanel.value.status;
 	s.wearingControl = this->_wearingControl.value.status;
 	s.multipointMode = this->_multipointModeStatusLocked();
+	s.connectionMode = this->_connectionMode.status;
+	s.assignment = this->_assignments.status;
 	return s;
 }
 
@@ -568,6 +571,13 @@ void Headphones::setEqualizer(const EqualizerConfig& requested)
 	cfg.preset = static_cast<unsigned char>(cfg.preset);
 
 	std::lock_guard guard(this->_propertyMtx);
+	if (this->_eqCapability && !this->_eqCapability->supports(static_cast<unsigned char>(cfg.preset))) return;
+	if (this->_eqSaveStep != EqSaveStep::Idle) {
+		this->_eq.desired = this->_eq.current;
+		this->_eq.status = this->_eq.reported ? SettingStatus::Confirmed : SettingStatus::Unknown;
+	}
+	this->_eqSaveStep = EqSaveStep::Idle;
+	++this->_eqSaveToken;
 	// Only MANUAL sends band values. For any other preset the bands are whatever the device
 	// reports, so a request must not differ from the current state by bands it never sends -
 	// otherwise a reported curve would make re-selecting the same preset look like a change.
@@ -577,6 +587,85 @@ void Headphones::setEqualizer(const EqualizerConfig& requested)
 		cfg.bands = this->_eq.desired.bands;
 	}
 	this->_eq.setDesired(cfg);
+}
+
+bool Headphones::saveEqualizerCurve(unsigned char targetPreset, int clearBass, const std::vector<int>& bands)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_expireEqualizerSaveLocked();
+	if (this->_eqSaveStep != EqSaveStep::Idle) return false;
+	if ((targetPreset != 0xA1 && targetPreset != 0xA2) || !this->_eqCapability ||
+		!this->_eqCapability->supports(targetPreset) || this->_eqCapability->bands != 6 ||
+		!this->_eq.reported || this->_eqLevelCount != 6 || bands.size() != 5) return false;
+	std::vector<int> levels{clearBass};
+	levels.insert(levels.end(), bands.begin(), bands.end());
+	if (!SonyEq::editCurve(*this->_eqCapability, levels)) return false;
+	this->_eqSaveTarget = {targetPreset, clearBass, bands};
+	this->_eq.desired = this->_eqSaveTarget;
+	++this->_eq.revision;
+	// This workflow owns both writes, so the ordinary property sender cannot replay either.
+	this->_eq.sentRevision = this->_eq.revision;
+	this->_eq.status = SettingStatus::Requested;
+	++this->_eqSaveToken;
+	this->_eqSaveDeadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+	this->_eqSaveStep = EqSaveStep::Select;
+	return true;
+}
+
+void Headphones::_expireEqualizerSaveLocked()
+{
+	if (this->_eqSaveStep != EqSaveStep::Idle && std::chrono::steady_clock::now() >= this->_eqSaveDeadline) {
+		this->_eqSaveStep = EqSaveStep::Idle;
+		++this->_eqSaveToken;
+		this->_eq.status = SettingStatus::Failed;
+	}
+}
+
+bool Headphones::equalizerSavePending()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	this->_expireEqualizerSaveLocked();
+	return this->_eqSaveStep != EqSaveStep::Idle;
+}
+
+void Headphones::_sendEqualizerSave()
+{
+	Buffer payload;
+	unsigned long long token;
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		this->_expireEqualizerSaveLocked();
+		if (this->_eqSaveStep != EqSaveStep::Idle && (!this->_eqCapability || this->_eqCapability->bands != 6 ||
+			!this->_eqCapability->supports(static_cast<unsigned char>(this->_eqSaveTarget.preset)))) {
+			this->_eqSaveStep = EqSaveStep::Idle;
+			this->_eq.status = SettingStatus::Failed;
+			return;
+		}
+		if (this->_eqSaveStep == EqSaveStep::Select) {
+			payload = CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(this->_eqSaveTarget.preset));
+			this->_eqSaveStep = EqSaveStep::WaitSelection;
+		} else if (this->_eqSaveStep == EqSaveStep::Curve) {
+			std::vector<int> levels{this->_eqSaveTarget.clearBass};
+			levels.insert(levels.end(), this->_eqSaveTarget.bands.begin(), this->_eqSaveTarget.bands.end());
+			auto encoded = SonyEq::editCurve(*this->_eqCapability, levels);
+			if (!encoded) { this->_eqSaveStep = EqSaveStep::Idle; this->_eq.status = SettingStatus::Failed; return; }
+			payload = *encoded;
+			this->_eqSaveStep = EqSaveStep::WaitCurve;
+		} else return;
+		token = this->_eqSaveToken;
+	}
+	try { this->_conn.sendCommand(payload); }
+	catch (...) {
+		std::lock_guard guard(this->_propertyMtx);
+		if (token == this->_eqSaveToken && this->_eqSaveStep != EqSaveStep::Idle) {
+			this->_eqSaveStep = EqSaveStep::Idle;
+			this->_eq.status = SettingStatus::Failed;
+		}
+		throw;
+	}
+	std::lock_guard guard(this->_propertyMtx);
+	if (token == this->_eqSaveToken && this->_eqSaveStep != EqSaveStep::Idle)
+		this->_enqueueQueryLocked(CommandSerializer::serializeEqualizerQuery());
 }
 
 EqualizerConfig Headphones::getEqualizer()
@@ -615,6 +704,7 @@ void Headphones::setAutoPowerOff(AUTO_POWER_OFF val)
 
 	AutoPowerOffConfig cfg;
 	cfg.active = autoPowerOffElement(val);
+	if (this->_powerOffCapability && std::find(this->_powerOffCapability->begin(), this->_powerOffCapability->end(), cfg.active) == this->_powerOffCapability->end()) return;
 	if (v1::isTimedAutoPowerOffElement(cfg.active))
 	{
 		// Choosing a timer selects it as well.
@@ -665,11 +755,20 @@ int Headphones::getEqualizerLevelCount()
 
 bool Headphones::isChanged()
 {
-	std::lock_guard guard(this->_propertyMtx);
+    std::lock_guard guard(this->_propertyMtx);
+    if (_conn.getProtocol() == SonyProtocol::V2) {
+        for (const auto& [selector, value] : _v2AudioValues) if (!value.isFulfilled()) return true;
+        for (const auto& [selector, value] : _v2EqPresets) if (!value.isFulfilled()) return true;
+        for (const auto& [selector, value] : _v2EqCurves) if (!value.isFulfilled()) return true;
+        for (const auto& [selector, value] : _v2AmbientValues) if (!value.isFulfilled()) return true;
+        return false;
+    }
+	this->_expireEqualizerSaveLocked();
+	if (this->_eqSaveStep == EqSaveStep::Select || this->_eqSaveStep == EqSaveStep::Curve) return true;
 	// A multipoint write, or the user's answer to its alert, waiting for the command worker.
 	if (this->_mpStep == MultipointStep::Requested || this->_mpStep == MultipointStep::Answering)
 		return true;
-	return !(this->_ambientSoundControl.isFulfilled() &&
+	return !(this->_assignments.isFulfilled() && this->_connectionMode.isFulfilled() && this->_ambientSoundControl.isFulfilled() &&
 		this->_asmLevel.isFulfilled() &&
 		this->_focusOnVoice.isFulfilled() &&
 		this->_surroundPosition.isFulfilled() &&
@@ -689,6 +788,7 @@ bool Headphones::isChanged()
 
 void Headphones::setChanges()
 {
+    if (_conn.getProtocol() == SonyProtocol::V2) { _pushV2Changes(); return; }
 	// One pass over every pending setting. Each group snapshots its value + revision under
 	// the lock, sends with the lock released (the Listener needs it to apply replies), then
 	// records the result against the revision that actually went out. A value changed while
@@ -712,9 +812,42 @@ void Headphones::setChanges()
 	};
 
 	run([&] {
+		if (this->_sendPending(this->_connectionMode, [&](SonyAudio::ConnectionMode value) {
+			if (!this->connectionModeReady())
+				throw RecoverableException("Connection preference is not ready");
+			this->_conn.sendCommand(SonyAudio::setConnectionMode(value));
+		}))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_enqueueQueryLocked(SonyAudio::connectionModeQuery());
+		}
+	});
+	run([&] {
 		this->_sendPending(this->_optimizerState, [&](OPTIMIZER_STATE val) {
 			this->_conn.sendCommand(CommandSerializer::serializeXM4OptimizeCommand(val));
 		});
+	});
+	run([&] {
+		if (this->_sendPending(this->_assignments, [&](const std::vector<unsigned char>& values) {
+			std::optional<Buffer> payload;
+			{
+				std::lock_guard guard(this->_propertyMtx);
+				if (this->_assignmentCapability && this->_assignmentAvailable && this->_assignments.reported &&
+					values.size() == this->_assignmentAvailable->size() && !values.empty())
+				{
+					bool allowed = values.size() == this->_assignments.reported->size();
+					for (size_t i = 0; allowed && i < values.size(); ++i)
+						if (values[i] != (*this->_assignments.reported)[i] && !(*this->_assignmentAvailable)[i]) allowed = false;
+					if (allowed) payload = SonyAssignment::buildSet(*this->_assignmentCapability, values, 0, values[0]);
+				}
+			}
+			if (!payload) throw RecoverableException("Button assignment is not available");
+			this->_conn.sendCommand(*payload);
+		}))
+		{
+			std::lock_guard guard(this->_propertyMtx);
+			this->_enqueueQueryLocked(SonyAssignment::queryState());
+		}
 	});
 
 	// Every write that went out is followed by a read of the same setting (when the device
@@ -737,10 +870,28 @@ void Headphones::setChanges()
 	});
 
 	run([&] {
+		this->_sendEqualizerSave();
 		if (this->_sendPending(this->_eq, [&](const EqualizerConfig& cfg) {
+			if (auto cap = this->getEqualizerCapability(); cap && !cap->supports(static_cast<unsigned char>(cfg.preset)))
+				throw RecoverableException("Equalizer preset is not advertised by this device");
 			// MANUAL means "apply these band sliders"; every other id just selects the preset.
 			if (cfg.preset == static_cast<unsigned char>(EQ_PRESET::MANUAL))
-				this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
+			{
+				// Discovery can finish after a manual edit was queued. Check again at the
+				// sender, including for callers other than the Qt controller.
+				const int levels = this->getEqualizerLevelCount();
+				if (levels >= 0 && levels != 6)
+					throw RecoverableException("The reported equalizer layout does not support a six-level custom curve");
+				if (auto cap = this->getEqualizerCapability())
+				{
+					std::vector<int> levels{cfg.clearBass};
+					levels.insert(levels.end(), cfg.bands.begin(), cfg.bands.end());
+					auto payload = SonyEq::editCurve(*cap, levels);
+					if (!payload) throw RecoverableException("Equalizer curve is outside the device's supported range");
+					this->_conn.sendCommand(*payload);
+				}
+				else this->_conn.sendCommand(CommandSerializer::serializeEqualizerCustomBands(cfg.clearBass, cfg.bands));
+			}
 			else
 				this->_conn.sendCommand(CommandSerializer::serializeEqualizerPreset(static_cast<unsigned char>(cfg.preset)));
 		}))
@@ -764,6 +915,8 @@ void Headphones::setChanges()
 
 	run([&] {
 		if (this->_sendPending(this->_autoPowerOff, [&](const AutoPowerOffConfig& cfg) {
+			if (auto cap = this->getPowerOffCapability(); cap && std::find(cap->begin(), cap->end(), cfg.active) == cap->end())
+				throw RecoverableException("Auto power-off choice is not advertised by this device");
 			this->_conn.sendCommand(CommandSerializer::serializeAutoPowerOff(cfg.active, cfg.selectedTime));
 		}))
 			this->_queueReadBack(ReadBack::AutoPowerOff);
@@ -804,6 +957,18 @@ void Headphones::_pushNcAsm()
 
 	try
 	{
+        std::optional<Buffer> payload;
+        {
+            std::lock_guard guard(_propertyMtx);
+            if (_ambientCapability) {
+                if (_ncAsmReport) payload = SonyAmbient::buildModeSet(*_ambientCapability, *_ncAsmReport,
+                    !ambient ? SonyAmbient::Mode::Off : level == 0 ? SonyAmbient::Mode::NoiseCancelling : SonyAmbient::Mode::Ambient,
+                    level, static_cast<unsigned char>(asmId));
+                if (!payload) throw RecoverableException("The advertised ambient mode or level is not available");
+            }
+        }
+        if (payload) _conn.sendCommand(*payload);
+        else {
 		this->_conn.sendCommand(CommandSerializer::serializeNcAndAsmSetting(
 			ncAsmEffect,
 			NC_ASM_SETTING_TYPE::LEVEL_ADJUSTMENT,
@@ -811,6 +976,7 @@ void Headphones::_pushNcAsm()
 			asmId,
 			static_cast<char>(asmLevel)
 		));
+        }
 	}
 	catch (...)
 	{
@@ -825,6 +991,7 @@ void Headphones::_pushNcAsm()
 	this->_ambientSoundControl.markSent(ambientRev, ambient);
 	this->_focusOnVoice.markSent(voiceRev, voice);
 	this->_asmLevel.markSent(levelRev, level);
+    _enqueueQueryLocked(SonyAmbient::queryState());
 }
 
 // VPT and sound position are mutually exclusive and share one frame.
@@ -983,6 +1150,7 @@ void Headphones::_pushMultipoint()
 
 void Headphones::queryState()
 {
+    if (_conn.getProtocol() == SonyProtocol::V2) { _queryV2State(); return; }
 	// v1 connect handshake. Each send blocks only until it's ACKed; the actual replies
 	// arrive asynchronously on the Listener thread and land in setStateFromReply().
 	// A request the device ignores still gets its ACK, so it does not stop the others. A
@@ -1006,6 +1174,8 @@ void Headphones::queryState()
 	step([&] { this->queryDeviceCapabilities(); });
 	step([&] { this->queryNcAsmState(); });
 	step([&] { this->queryDevices(); });
+	step([&] { this->_conn.sendCommand({ 0x04, 0x01 }); });
+	step([&] { this->_conn.sendCommand({ 0x04, 0x02 }); });
 }
 
 void Headphones::queryNcAsmState()
@@ -1093,12 +1263,18 @@ void Headphones::_disconnectDevice(int deviceIdx)
 
 void Headphones::requestBattery()
 {
+    if (_conn.getProtocol() == SonyProtocol::V2) {
+        std::lock_guard guard(_propertyMtx);
+        if (_v2SupportsLocked(0x20)) _enqueueQueryLocked(SonyV2::queryBattery());
+        return;
+    }
 	// Ask for the battery level. The RET (and any later NOTIFY) is applied in setStateFromReply().
 	this->_conn.sendCommand(CommandSerializer::serializeBatteryRequest());
 }
 
 void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 {
+    if (_conn.getProtocol() == SonyProtocol::V2) { _applyV2(msg); return; }
 	if (msg.messageBytes.empty())
 		return;
 
@@ -1119,7 +1295,102 @@ void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 
 void Headphones::_applyTable1(const CommandSerializer::Message& msg)
 {
+    if (auto cap = SonyAmbient::parseCapability(msg)) {
+        std::lock_guard guard(_propertyMtx);
+        if (_advertisedLocked(FUNCTION_TYPE::NC_ASM)) {
+            _ambientCapability = *cap;
+            _enqueueQueryLocked(SonyAmbient::queryState());
+        }
+        return;
+    }
 	using namespace CommandSerializer;
+    // Captured V1 device-info strings: 05 selector byteLength bytes. Never use
+    // this informational reply to change transport or enable model-based writes.
+    const auto& bytes = msg.messageBytes;
+    if (bytes.size() >= 3 && static_cast<unsigned char>(bytes[0]) == 0x05)
+    {
+        const auto selector = static_cast<unsigned char>(bytes[1]);
+        const auto length = static_cast<unsigned char>(bytes[2]);
+        if ((selector == 1 || selector == 2) && length > 0 && bytes.size() == 3u + length &&
+            std::all_of(bytes.begin() + 3, bytes.end(), [](unsigned char c) { return c >= 0x20 && c <= 0x7e; }))
+        {
+            std::lock_guard guard(this->_propertyMtx);
+            (selector == 1 ? _reportedModel : _firmwareVersion).assign(bytes.begin() + 3, bytes.end());
+        }
+        else ProtocolTrace::unused(msg);
+        return;
+    }
+	if (auto cap = SonyEq::parseCapability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_advertisedLocked(FUNCTION_TYPE::PRESET_EQ))
+		{
+			this->_eqCapability = *cap;
+			this->_enqueueQueryLocked(CommandSerializer::serializeEqualizerQuery());
+		}
+		return;
+	}
+	if (auto cap = SonyEq::parsePowerOffCapability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_advertisedLocked(FUNCTION_TYPE::AUTO_POWER_OFF)) this->_powerOffCapability = *cap;
+		return;
+	}
+	if (auto cap = SonyAudio::parseConnectionCapability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		this->_connectionModeCapable = this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE);
+		return;
+	}
+	if (auto available = SonyAudio::parseConnectionAvailability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		this->_connectionModeAvailable = *available;
+		return;
+	}
+	if (auto cap = SonyAssignment::parseCapability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_advertisedLocked(FUNCTION_TYPE::ASSIGNABLE_SETTINGS))
+		{
+			this->_assignmentCapability = *cap;
+			this->_enqueueQueryLocked(SonyAssignment::queryAvailability());
+			this->_enqueueQueryLocked(SonyAssignment::queryState());
+		}
+		return;
+	}
+	if (auto values = SonyAssignment::parseState(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_assignmentCapability && values->size() == this->_assignmentCapability->keys.size())
+			this->_assignments.setState(*values);
+		return;
+	}
+	if (auto values = SonyAssignment::parseAvailability(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_assignmentCapability && values->size() == this->_assignmentCapability->keys.size())
+			this->_assignmentAvailable = *values;
+		return;
+	}
+	if (auto value = SonyAudio::parseConnectionMode(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		if (this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE)) this->_connectionMode.setState(*value);
+		return;
+	}
+	if (auto value = SonyAudio::parseCodec(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		this->_codec = *value;
+		return;
+	}
+	if (auto value = SonyAudio::parseDseeActivity(msg))
+	{
+		std::lock_guard guard(this->_propertyMtx);
+		this->_dseeActivity = *value;
+		return;
+	}
 
 	switch (static_cast<unsigned char>(msg.messageBytes[0]))
 	{
@@ -1338,6 +1609,7 @@ void Headphones::_applyNcAsm(const CommandSerializer::NcAsmReport& report)
 void Headphones::_applyEqualizer(const CommandSerializer::EqualizerReport& report)
 {
 	std::lock_guard guard(this->_propertyMtx);
+	this->_expireEqualizerSaveLocked();
 
 	EqualizerConfig cfg = this->_eq.current;
 	// 0xFF (Sony's UNSPECIFIED) is the marker this client writes for custom bands, so a device
@@ -1347,17 +1619,43 @@ void Headphones::_applyEqualizer(const CommandSerializer::EqualizerReport& repor
 	// shape is decoded into band values - with the same convention, since how Sony scales the
 	// bytes is not settled. Any other shape keeps the last known bands; the level count is
 	// recorded so the UI can stop offering a band editor that does not fit the device.
-	bool decodable = report.levels.size() == 6;
-	for (unsigned char level : report.levels)
-		decodable = decodable && level <= 20;
-	if (decodable)
+	SonyEq::Capability scale;
+	scale.bands = 6;
+	scale.levelSteps = 21; // legacy fallback until the capability reply arrives
+	if (this->_eqCapability) scale = *this->_eqCapability;
+	const auto decoded = SonyEq::decodeLevels(scale, report.levels);
+	if (decoded && decoded->size() == 6)
 	{
-		cfg.clearBass = static_cast<int>(report.levels[0]) - 10;
+		cfg.clearBass = (*decoded)[0];
 		cfg.bands.assign(5, 0);
 		for (size_t i = 0; i < 5; ++i)
-			cfg.bands[i] = static_cast<int>(report.levels[i + 1]) - 10;
+			cfg.bands[i] = (*decoded)[i + 1];
 	}
-	this->_eqLevelCount = static_cast<int>(report.levels.size());
+	this->_eqLevelCount = decoded ? static_cast<int>(report.levels.size()) : 0;
+	if (this->_eqSaveStep != EqSaveStep::Idle) {
+		// UNSPECIFIED is meaningful as the saved slot only after its selection was observed.
+		if (this->_eqSaveStep == EqSaveStep::WaitCurve && report.preset == 0xFF)
+			cfg.preset = this->_eqSaveTarget.preset;
+		this->_eq.current = cfg;
+		this->_eq.reported = cfg;
+		if (this->_eqSaveStep == EqSaveStep::Curve && report.preset != this->_eqSaveTarget.preset) {
+			// Another controller changed the active slot after our selection was observed.
+			// An FF write now would modify its slot, not the user's requested destination.
+			this->_eqSaveStep = EqSaveStep::Idle;
+			++this->_eqSaveToken;
+			this->_eq.status = SettingStatus::Failed;
+			return;
+		}
+		if (decoded && decoded->size() == 6) {
+			if (this->_eqSaveStep == EqSaveStep::WaitSelection && report.preset == this->_eqSaveTarget.preset)
+				this->_eqSaveStep = EqSaveStep::Curve;
+			else if (this->_eqSaveStep == EqSaveStep::WaitCurve && cfg == this->_eqSaveTarget) {
+				this->_eqSaveStep = EqSaveStep::Idle;
+				this->_eq.status = SettingStatus::Confirmed;
+			}
+		}
+		return;
+	}
 	this->_eq.setState(cfg);
 }
 
@@ -1433,6 +1731,26 @@ void Headphones::_applySupportedFunctions(const std::vector<unsigned char>& ids)
 	// not restart discovery underneath settings that were already resolved.
 	if (!firstReply)
 		return;
+	if (this->_advertisedLocked(FUNCTION_TYPE::NC_ASM))
+        this->_enqueueQueryLocked(SonyAmbient::queryCapability());
+	if (this->_advertisedLocked(FUNCTION_TYPE::PRESET_EQ))
+		this->_enqueueQueryLocked(SonyEq::queryCapability());
+	if (this->_advertisedLocked(FUNCTION_TYPE::AUTO_POWER_OFF))
+		this->_enqueueQueryLocked(SonyEq::queryPowerOffCapability());
+	if (this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE))
+	{
+		this->_enqueueQueryLocked(SonyAudio::connectionCapabilityQuery());
+		this->_enqueueQueryLocked(SonyAudio::connectionAvailabilityQuery());
+		this->_enqueueQueryLocked(SonyAudio::connectionModeQuery());
+	}
+	if (this->_advertisedLocked(FUNCTION_TYPE::CODEC_INDICATOR))
+		this->_enqueueQueryLocked(SonyAudio::codecQuery());
+	if (this->_advertisedLocked(FUNCTION_TYPE::UPSCALING_INDICATOR))
+		this->_enqueueQueryLocked(SonyAudio::dseeActivityQuery());
+	if (this->_advertisedLocked(FUNCTION_TYPE::ASSIGNABLE_SETTINGS))
+	{
+		this->_enqueueQueryLocked(SonyAssignment::queryCapability());
+	}
 
 	// Touch panel and multipoint mode live in whichever general-setting slots the device
 	// advertises. Which slot holds which feature is only known from each slot's capability title.
@@ -1550,7 +1868,20 @@ bool Headphones::isBatteryCharging()
 
 void Headphones::resetState()
 {
-	std::lock_guard guard(this->_propertyMtx);
+    std::lock_guard guard(this->_propertyMtx);
+    _v2AudioCapabilities.clear(); _v2AudioReports.clear(); _v2AudioAvailable.clear();
+    _v2Codec.reset(); _v2Effect.reset();
+    for (auto& [selector, value] : _v2AudioValues) value.reset(-1);
+    _v2Phase = "idle";
+    _v2Protocol.reset(); _v2Capability.reset();
+    _v2Functions = {};
+    _v2AmbientCapabilities.clear(); _v2AmbientReports.clear(); _v2AmbientAvailable.clear();
+    for (auto& [selector, value] : _v2AmbientValues) value.reset({});
+    _v2EqMetadata.clear();
+    for (auto& [selector, value] : _v2EqCurves) value.reset({});
+    _v2EqCapabilities.clear(); _v2EqReports.clear(); _v2EqAvailable.clear();
+    for (auto& [selector, value] : _v2EqPresets) value.reset(-1);
+    _v2Reply.notify_all();
 
 	this->_batteryLevel = -1;
 	this->_batteryCharging = false;
@@ -1587,13 +1918,146 @@ void Headphones::resetState()
 	this->_speakToChat.reset(S2C_TOGGLE::INACTIVE);
 	this->_s2cOptions.reset(0);
 	this->_eq.reset(EqualizerConfig{});
+	this->_eqSaveStep = EqSaveStep::Idle;
+	++this->_eqSaveToken;
 	this->_eqLevelCount = -1;
 	this->_ncAsmReport.reset();
+    _ambientCapability.reset();
 	this->_audioUpsampling.reset(false);
+	this->_eqCapability.reset();
+	this->_powerOffCapability.reset();
+	this->_connectionModeCapable = false;
+	this->_connectionModeAvailable.reset();
+	this->_connectionMode.reset(SonyAudio::ConnectionMode::SoundQuality);
+	this->_codec.reset();
+	_reportedModel.clear();
+	_firmwareVersion.clear();
+	this->_dseeActivity.reset();
+	this->_assignmentCapability.reset();
+	this->_assignmentAvailable.reset();
+	this->_assignments.reset({});
 	this->_voiceGuidance.reset(false);
 	this->_autoPowerOff.reset(AutoPowerOffConfig{});
 
 	this->_savedDevices = { BluetoothDevice{"", ""} };
 	this->_dev1.reset(0);
 	this->_dev2.reset(0);
+}
+
+std::optional<SonyEq::Capability> Headphones::getEqualizerCapability()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_eqCapability;
+}
+
+std::optional<std::vector<unsigned char>> Headphones::getPowerOffCapability()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_powerOffCapability;
+}
+
+bool Headphones::connectionModeReady()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE) && this->_connectionModeCapable &&
+		this->_connectionModeAvailable.value_or(false) && this->_connectionMode.reported.has_value();
+}
+
+bool Headphones::setConnectionMode(SonyAudio::ConnectionMode mode)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE) || !this->_connectionModeCapable ||
+		!this->_connectionModeAvailable.value_or(false) || !this->_connectionMode.reported)
+		return false;
+	if (mode != SonyAudio::ConnectionMode::SoundQuality && mode != SonyAudio::ConnectionMode::ConnectionStability)
+		return false;
+	this->_connectionMode.setDesired(mode);
+	return true;
+}
+
+std::optional<SonyAudio::ConnectionMode> Headphones::getConnectionMode()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_connectionMode.reported;
+}
+
+std::optional<unsigned char> Headphones::getCodec()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_codec;
+}
+
+std::optional<SonyAudio::DseeActivity> Headphones::getDseeActivity()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_dseeActivity;
+}
+
+std::optional<SonyAssignment::Capability> Headphones::getAssignmentCapability()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_assignmentCapability;
+}
+
+std::optional<std::vector<unsigned char>> Headphones::getAssignments()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_assignments.reported;
+}
+
+std::optional<std::vector<bool>> Headphones::getAssignmentAvailability()
+{
+	std::lock_guard guard(this->_propertyMtx);
+	return this->_assignmentAvailable;
+}
+
+bool Headphones::setAssignment(size_t index, unsigned char preset)
+{
+	std::lock_guard guard(this->_propertyMtx);
+	if (!this->_advertisedLocked(FUNCTION_TYPE::ASSIGNABLE_SETTINGS) || !this->_assignmentCapability || !this->_assignmentAvailable || !this->_assignments.reported ||
+		index >= this->_assignmentAvailable->size() || !(*this->_assignmentAvailable)[index]) return false;
+	auto values = this->_assignments.desired;
+	if (!SonyAssignment::buildSet(*this->_assignmentCapability, values, index, preset)) return false;
+	values[index] = preset;
+	this->_assignments.setDesired(values);
+	return true;
+}
+
+std::string Headphones::reportedModel() { std::lock_guard guard(_propertyMtx); return _reportedModel; }
+std::string Headphones::firmwareVersion() { std::lock_guard guard(_propertyMtx); return _firmwareVersion; }
+
+std::optional<std::vector<unsigned char>> Headphones::pendingAssignments()
+{
+    std::lock_guard guard(_propertyMtx);
+    if (_assignments.status == SettingStatus::Requested || _assignments.status == SettingStatus::Acknowledged)
+        return _assignments.desired;
+    return std::nullopt;
+}
+std::optional<SonyAudio::ConnectionMode> Headphones::pendingConnectionMode()
+{
+    std::lock_guard guard(_propertyMtx);
+    if (_connectionMode.status == SettingStatus::Requested || _connectionMode.status == SettingStatus::Acknowledged)
+        return _connectionMode.desired;
+    return std::nullopt;
+}
+
+#include "HeadphonesV2.inl"
+
+std::optional<SonyAmbient::Capability> Headphones::getAmbientCapability()
+{
+    std::lock_guard guard(_propertyMtx); return _ambientCapability;
+}
+bool Headphones::ambientWritable()
+{
+    std::lock_guard guard(_propertyMtx);
+    if (!_ambientCapability) return true; // existing V1 fallback until detailed discovery
+    return _ambientCapability->modeWritesSupported() && _ncAsmReport &&
+        _ncAsmReport->ncSettingType == _ambientCapability->ncType &&
+        _ncAsmReport->asmSettingType == _ambientCapability->asmType &&
+        _ambientCapability->supports(_ncAsmReport->asmId);
+}
+int Headphones::ambientMaximum(bool voice)
+{
+    std::lock_guard guard(_propertyMtx);
+    return _ambientCapability ? _ambientCapability->maximum(voice ? 1 : 0) : 19;
 }

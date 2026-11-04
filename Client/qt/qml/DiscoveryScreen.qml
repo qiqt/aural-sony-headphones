@@ -99,7 +99,8 @@ Item {
                             Rectangle {
                                 width: 8; height: 8; radius: 4
                                 anchors.verticalCenter: parent.verticalCenter
-                                color: modelData.isV2 ? Theme.error : Theme.success
+                                color: modelData.connected === false ? Theme.outline
+                                     : modelData.isV2 ? Theme.error : Theme.success
                             }
                             Text {
                                 anchors.verticalCenter: parent.verticalCenter
@@ -126,7 +127,7 @@ Item {
         Text {
             visible: Hp.devices.length === 0 && !Hp.discovering
             Layout.fillWidth: true
-            text: "No connected headphones found. Pair and connect them in Windows Bluetooth settings, then press Scan again."
+            text: "No headphones found. Pair them in Windows Bluetooth settings, then press Scan again."
             color: Theme.textSecondary
             font.pixelSize: Theme.bodyMd
             wrapMode: Text.WordWrap
@@ -146,7 +147,7 @@ Item {
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
-                text: "Make sure it's paired and connected in Windows Bluetooth settings."
+                text: "Make sure it's turned on and paired in Windows Bluetooth settings."
                 color: Theme.textSecondary
                 font.pixelSize: Theme.labelMd
             }

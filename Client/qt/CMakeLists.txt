@@ -124,6 +124,7 @@ qt_add_qml_module(appAural
         qml/ConnectedDevicesScreen.qml
         qml/SystemScreen.qml
         qml/PlaceholderScreen.qml
+        qml/V2Screen.qml
         qml/AboutScreen.qml
         qml/StatusChip.qml
         qml/DeviceToggleRow.qml

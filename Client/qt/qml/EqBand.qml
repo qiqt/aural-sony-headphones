@@ -8,6 +8,8 @@ ColumnLayout {
     property string label: ""
     property int value: 0
     property bool active: true
+    property int minimum: -10
+    property int maximum: 10
     signal moved(int value)
     spacing: Theme.base
 
@@ -25,8 +27,8 @@ ColumnLayout {
         Layout.alignment: Qt.AlignHCenter
         Layout.fillHeight: true
         orientation: Qt.Vertical
-        from: -10
-        to: 10
+        from: root.minimum
+        to: root.maximum
         stepSize: 1
         enabled: root.active
         onMoved: root.moved(Math.round(value))

@@ -160,6 +160,7 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 {
 	std::lock_guard commandGuard(this->_commandMtx);
 	this->_protocol = protocol;
+    this->_protocolDiscovered = false;
 	this->_seqNumber.store(0);
 	this->_aborted.store(false);
 	// A fresh link is synchronized again: this is the only thing that clears the latch.
@@ -173,10 +174,21 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 	}
 	this->_ackCv.notify_all();
 	this->_readBuffer.clear();
-	ProtocolTrace::line("CONNECT " + addr + (protocol == SonyProtocol::V2 ? " (v2)" : " (v1)"));
+    // Discovery may block. A disconnect during it must cancel this attempt rather
+    // than let the returning discovery result open a fresh socket after teardown.
+    const auto discovered = this->_connector->discoverProtocol(addr);
+    if (this->_aborted.load())
+        throw RecoverableException("Connection cancelled during service discovery", true);
+    if (discovered)
+    {
+        this->_protocol.store(*discovered);
+        this->_protocolDiscovered.store(true);
+    }
+	ProtocolTrace::line("CONNECT " + addr + (this->_protocol.load() == SonyProtocol::V2 ? " (v2)" : " (v1)") +
+        (this->_protocolDiscovered.load() ? " service-discovered" : " fallback: service discovery inconclusive"));
 	try
 	{
-		this->_connector->connect(addr, protocol);
+		this->_connector->connect(addr, this->_protocol.load());
 	}
 	catch (const std::exception& exc)
 	{
@@ -210,6 +222,11 @@ void BluetoothWrapper::notifyLinkLost() noexcept
 std::vector<BluetoothDevice> BluetoothWrapper::getConnectedDevices()
 {
 	return this->_connector->getConnectedDevices();
+}
+
+std::vector<BluetoothDevice> BluetoothWrapper::getPairedDevices()
+{
+	return this->_connector->getPairedDevices();
 }
 
 int BluetoothWrapper::getDeviceBatteryLevel(const std::string& deviceName)

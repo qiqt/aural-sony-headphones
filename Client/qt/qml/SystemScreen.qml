@@ -125,12 +125,76 @@ Item {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            visible: Hp.connected && !Hp.isV2
+            radius: Theme.radiusLg; color: Theme.surfaceContainer
+            border.color: Theme.outlineVariant; border.width: 1
+            implicitHeight: audioCol.implicitHeight + 2 * Theme.lg
+            ColumnLayout {
+                id: audioCol
+                anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.sm
+                Text { text: "Audio connection"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold }
+                Text { text: "Current codec: " + (Hp.audioInfo.codec || "Not reported"); color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+                Text { text: "DSEE activity: " + (Hp.audioInfo.dseeActivity || "Not reported"); color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Activity reports whether DSEE is processing now. The DSEE switch above controls whether it is enabled. Changing connection preference can interrupt audio."
+                    wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm
+                }
+                AuralCombo {
+                    Layout.fillWidth: true
+                    visible: Hp.audioInfo.offered === true
+                    enabled: Hp.audioInfo.ready === true && Hp.audioInfo.status !== "requested"
+                    model: ["Prioritize sound quality", "Prioritize connection stability"]
+                    Binding on currentIndex { value: Hp.audioInfo.value === undefined ? -1 : Hp.audioInfo.value }
+                    onActivated: (i) => Hp.setConnectionPreference(i)
+                }
+                StatusChip { visible: Hp.audioInfo.offered === true; active: true; status: Hp.audioInfo.status || "unknown" }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            visible: Hp.buttonAssignments.length > 0
+            radius: Theme.radiusLg; color: Theme.surfaceContainer
+            border.color: Theme.outlineVariant; border.width: 1
+            implicitHeight: assignmentCol.implicitHeight + 2 * Theme.lg
+            ColumnLayout {
+                id: assignmentCol
+                anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.md
+                Text { text: "Button assignments"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold }
+                Text {
+                    Layout.fillWidth: true
+                    text: "Choose from the assignments your headphones offer. Voice assistants may also need setup on your phone."
+                    wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm
+                }
+                Repeater {
+                    model: Hp.buttonAssignments
+                    delegate: ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        Text { text: modelData.title; color: Theme.textPrimary; font.pixelSize: Theme.bodyMd }
+                        AuralCombo {
+                            Layout.fillWidth: true
+                            model: modelData.labels
+                            enabled: modelData.ready && modelData.status !== "requested"
+                            Binding on currentIndex { value: modelData.selected }
+                            onActivated: (i) => Hp.setButtonAssignment(modelData.keyIndex, modelData.presetIds[i])
+                        }
+                        Text { Layout.fillWidth: true; text: modelData.summary; wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                        StatusChip { active: true; status: modelData.status }
+                    }
+                }
+            }
+        }
+
         // Power management (needs a connected v1 device)
         Rectangle {
             Layout.fillWidth: true
             radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1
             implicitHeight: powCol.implicitHeight + 2 * Theme.lg
-            // The choices are the model's known ones plus whatever the device reports holding.
+            // The device's capability overrides the model fallback once read.
             enabled: Hp.autoPowerOffAvailable
             opacity: enabled ? 1.0 : 0.5
             ColumnLayout {
@@ -152,6 +216,23 @@ Item {
                     onActivated: (i) => Hp.autoPowerOff = root.powerOptions[i]
                     Binding on currentIndex { value: Math.max(0, root.powerOptions.indexOf(Hp.autoPowerOff)) }
                 }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            radius: Theme.radiusLg; color: Theme.surfaceContainer
+            border.color: Theme.outlineVariant; border.width: 1
+            implicitHeight: diagnosticsCol.implicitHeight + 2 * Theme.lg
+            ColumnLayout {
+                id: diagnosticsCol
+                anchors.fill: parent; anchors.margins: Theme.lg; spacing: Theme.sm
+                Text { text: "Device diagnostics"; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd; font.weight: Font.DemiBold }
+                Text { Layout.fillWidth: true; text: "Model: " + (Hp.diagnostics.reportedModel || "Not reported") + " / Firmware: " + (Hp.diagnostics.firmware || "Not reported"); wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+                Text { Layout.fillWidth: true; text: Hp.diagnostics.protocol + "\n" + Hp.diagnostics.protocolSource + "\n" + Hp.diagnostics.validation; wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
+                Text { Layout.fillWidth: true; text: Hp.diagnostics.capabilitiesKnown ? "Reported functions: " + (Hp.diagnostics.functions || "None") : "Capabilities not reported"; wrapMode: Text.WrapAnywhere; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                Text { Layout.fillWidth: true; text: "Export saves device details and the latest 256 log entries to Documents/Aural Diagnostics. The log may include Bluetooth names and addresses; review it before sharing."; wrapMode: Text.WordWrap; color: Theme.textSecondary; font.pixelSize: Theme.labelSm }
+                AuralButton { text: "Export diagnostics"; onClicked: Hp.exportDiagnostics() }
             }
         }
 
