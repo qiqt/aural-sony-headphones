@@ -9,6 +9,14 @@ headphones in Windows Bluetooth settings. On startup, Aural connects
 automatically when one recognized headset is already connected to Windows.
 Otherwise, select your headphones and choose **Connect**.
 
+## Screenshots
+
+Dashboard and equalizer, shown with demo data.
+
+![Aural dashboard](docs/screenshots/dashboard.png)
+
+![Aural equalizer](docs/screenshots/equalizer.png)
+
 ## Device support
 
 - **WH-1000XM4:** tested on real headphones.
