@@ -448,8 +448,7 @@ TEST(protocol_frame_size_must_match_the_declared_size)
 	{
 		Buffer raw = { static_cast<char>(DATA_TYPE::DATA_MDR), 0 };
 		const unsigned int size = 4 + delta;
-		std::vector<unsigned char> sizeBytes{static_cast<unsigned char>(size >> 24), static_cast<unsigned char>(size >> 16), static_cast<unsigned char>(size >> 8), static_cast<unsigned char>(size)};
-		raw.insert(raw.end(), sizeBytes.begin(), sizeBytes.end());
+		for (int shift : {24, 16, 8, 0}) raw.push_back(static_cast<char>(size >> shift));
 		const Buffer payload = hex("11 00 4B 00");
 		raw.insert(raw.end(), payload.begin(), payload.end());
 		raw.push_back(static_cast<char>(_sumChecksum(raw)));

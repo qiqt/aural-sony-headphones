@@ -1,6 +1,7 @@
 #include "SocketChannel.h"
 #include "WindowsBluetoothConnector.h"
 #include "BluetoothAddress.h"
+#include "ProtocolTrace.h"
 
 #include <ws2bth.h>
 #include <BluetoothAPIs.h>
@@ -221,6 +222,7 @@ std::optional<SonyProtocol> WindowsBluetoothConnector::discoverProtocol(const st
     DWORD error = BluetoothEnumerateInstalledServices(nullptr, &info, &count, nullptr);
     if ((error != ERROR_SUCCESS && error != ERROR_MORE_DATA) || count == 0 || count > 4096)
     {
+        ProtocolTrace::line("service cache inconclusive: error=" + std::to_string(error) + " count=" + std::to_string(count));
         return std::nullopt;
     }
 
@@ -242,10 +244,12 @@ std::optional<SonyProtocol> WindowsBluetoothConnector::discoverProtocol(const st
             };
             if (has(v2)) return SonyProtocol::V2;
             if (has(v1)) return SonyProtocol::V1;
+            ProtocolTrace::line("service cache contains no Sony control UUID; using protocol fallback");
             return std::nullopt;
         }
         if (error != ERROR_MORE_DATA) break;
     }
+    ProtocolTrace::line("service cache read failed: " + std::to_string(error));
     return std::nullopt;
 }
 

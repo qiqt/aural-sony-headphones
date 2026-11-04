@@ -14,6 +14,7 @@ set(ENGINE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/..)
 add_executable(engine_tests
     TestHarness.cpp
     TestMain.cpp
+    test_core.cpp
     test_transport.cpp
     test_ack.cpp
     test_settings.cpp
@@ -58,7 +59,15 @@ target_link_libraries(engine_tests PRIVATE Threads::Threads)
 enable_testing()
 
 # One CTest entry per suite: a failure names the area rather than "the tests".
-foreach(suite transport ack settings lifecycle model protocol discovery readback toggles multipoint audio eqcap assignment ambientcap v2 v2session v2ambient v2audio)
+foreach(suite core transport ack settings lifecycle model protocol discovery readback toggles multipoint audio eqcap assignment ambientcap v2 v2session v2ambient v2audio)
     add_test(NAME ${suite} COMMAND engine_tests ${suite}_)
     set_tests_properties(${suite} PROPERTIES TIMEOUT 120)
 endforeach()
+
+if(WIN32)
+    target_sources(engine_tests PRIVATE test_windows_socket.cpp)
+    target_link_libraries(engine_tests PRIVATE ws2_32)
+    target_compile_definitions(engine_tests PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    add_test(NAME windows_socket COMMAND engine_tests windows_socket_)
+    set_tests_properties(windows_socket PROPERTIES TIMEOUT 30)
+endif()

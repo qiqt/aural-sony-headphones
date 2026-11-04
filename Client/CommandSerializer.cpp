@@ -1,7 +1,6 @@
+#include "CommandSerializer.h"
 #include "PacketCodec.h"
 #include <algorithm>
-#include "CommandSerializer.h"
-
 
 namespace
 {
@@ -51,11 +50,8 @@ namespace
 namespace CommandSerializer
 {
     Buffer _escapeSpecials(const Buffer& src) { return SonyFrame::escape(src); }
-
     Buffer _unescapeSpecials(const Buffer& src) { return SonyFrame::unescape(src); }
-
     unsigned char _sumChecksum(const char* src, size_t size) { return SonyFrame::checksum({src, size}); }
-
     unsigned char _sumChecksum(const Buffer& src) { return SonyFrame::checksum(src); }
 
     Buffer packageDataForBt(const Buffer& src, DATA_TYPE type, unsigned int sequence)

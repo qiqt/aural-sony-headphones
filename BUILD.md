@@ -1,9 +1,7 @@
 # Building Aural (Windows)
 
 `appAural` is the Qt Quick client in `Client/qt`. It reuses the plain C++
-engine directly under `Client/` (protocol, framing, listener, Windows
-Bluetooth transport). The original ImGui client (`Client/CMakeLists.txt`)
-is a separate entry point and is not built by these steps.
+engine under `Client/` for protocol messages, device state and Bluetooth.
 
 ## Verified toolchain
 
@@ -121,6 +119,10 @@ cmake -S Client/tests -B build/tests -G "Visual Studio 17 2022" -A x64
 cmake --build build/tests --config Debug
 ctest --test-dir build/tests -C Debug --output-on-failure
 ```
+
+The `core` suite covers address parsing, async tasks and packet encoding. On
+Windows, `windows_socket` uses local loopback sockets to check data transfer,
+peer closure and cancellation of a pending read without touching headphones.
 
 They drive the engine through `FakeBluetoothConnector`, a scripted
 in-memory transport (`Client/tests/FakeBluetoothConnector.h`), so ACK

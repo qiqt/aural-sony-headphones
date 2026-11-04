@@ -45,7 +45,6 @@ __pycache__/
 .venv/
 .DS_Store
 Thumbs.db
-Client/imgui.ini
 
 # Local research and captures
 /docs/

@@ -19,22 +19,12 @@ namespace CommandSerializer
 		Buffer messageBytes; // the unescaped command payload (the DATA section)
 	};
 
-	//escape special chars
-
-	Buffer _escapeSpecials(const Buffer& src);
-	Buffer _unescapeSpecials(const Buffer& src);
-	unsigned char _sumChecksum(const char* src, size_t size);
-	unsigned char _sumChecksum(const Buffer& src);
-	//Package a serialized command according to the protocol
-	/*
-	References:
-	* DataType
-	* CommandBluetoothSender.sendCommandWithRetries
-	* BluetoothSenderWrapper.sendCommandViaBluetooth
-	* 
-	* Serialized data format: <START_MARKER>ESCAPE_SPECIALS(<DATA_TYPE><SEQ_NUMBER><BIG ENDIAN 4 BYTE SIZE OF UNESCAPED DATA><DATA><1 BYTE CHECKSUM>)<END_MARKER>
-	*/
-	Buffer packageDataForBt(const Buffer& src, DATA_TYPE dataType, unsigned int seqNumber);
+    Buffer _escapeSpecials(const Buffer& src);
+    Buffer _unescapeSpecials(const Buffer& src);
+    unsigned char _sumChecksum(const char* src, size_t size);
+    unsigned char _sumChecksum(const Buffer& src);
+    // Frame markers, escaping, checksum and length are handled by PacketCodec.
+    Buffer packageDataForBt(const Buffer& src, DATA_TYPE type, unsigned int sequence);
 
 	Message unpackBtMessage(const Buffer& src);
 
@@ -45,7 +35,7 @@ namespace CommandSerializer
 	// v1 battery level request (BATTERY_LEVEL_REQUEST 0x10, single battery 0x00). Reply is 0x11.
 	Buffer serializeBatteryRequest();
 
-	// v1 feature serializers (proven on XM4, from PR #103)
+	// V1 feature payloads; byte layouts are covered by protocol tests.
 	Buffer serializeXM4OptimizeCommand(OPTIMIZER_STATE state);
 	Buffer serializeXM4SpeakToChat(S2C_TOGGLE s2cState);
 	Buffer serializeXM4_S2C_Options(unsigned char sensitivity, unsigned char voice, unsigned char offTime);

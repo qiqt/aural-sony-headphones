@@ -7,8 +7,8 @@
 inline constexpr auto MAX_BLUETOOTH_MESSAGE_SIZE = 2048;
 inline constexpr char START_MARKER{ 62 };
 inline constexpr char END_MARKER{ 60 };
+inline constexpr std::size_t MAC_ADDR_STR_SIZE = 17;
 
-inline constexpr auto MAC_ADDR_STR_SIZE = 17;
 
 // Sony uses two RFCOMM "Serial HPC" service UUIDs depending on protocol generation.
 // The frame format is identical; the UUID and command set differ. We pick per device.
@@ -22,26 +22,11 @@ enum class SonyProtocol
 
 // V1 (legacy) service UUID
 inline constexpr auto SERVICE_UUID = "96CC203E-5068-46ad-B32D-E316F5E069BA";
-inline unsigned char SERVICE_UUID_IN_BYTES[] = { // this is the SERVICE_UUID but in bytes
-	0x96, 0xcc, 0x20, 0x3e, 0x50, 0x68, 0x46, 0xad,
-	0xb3, 0x2d, 0xe3, 0x16, 0xf5, 0xe0, 0x69, 0xba
-};
-
 // V2 service UUID (WH-1000XM5 and newer)
 inline constexpr auto SERVICE_UUID_V2 = "956C7B26-D49A-4BA8-B03F-B17D393CB6E2";
-inline unsigned char SERVICE_UUID_V2_IN_BYTES[] = {
-	0x95, 0x6C, 0x7B, 0x26, 0xD4, 0x9A, 0x4B, 0xA8,
-	0xB0, 0x3F, 0xB1, 0x7D, 0x39, 0x3C, 0xB6, 0xE2
-};
-
 inline const char* serviceUuidString(SonyProtocol protocol)
 {
 	return protocol == SonyProtocol::V2 ? SERVICE_UUID_V2 : SERVICE_UUID;
-}
-
-inline unsigned char* serviceUuidBytes(SonyProtocol protocol)
-{
-	return protocol == SonyProtocol::V2 ? SERVICE_UUID_V2_IN_BYTES : SERVICE_UUID_IN_BYTES;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -131,16 +116,6 @@ inline DeviceIdentity identifyDevice(const std::string& bluetoothName)
 	return DeviceIdentity{ SonyModel::Unknown, SonyProtocol::V1, false, "" };
 }
 
-// Which protocol to attempt for a device name. Kept for the original client; new code should
-// use identifyDevice() so it can also see whether the model was actually recognised.
-inline SonyProtocol protocolForDeviceName(const std::string& name)
-{
-	return identifyDevice(name).protocol;
-}
-
-#define APP_NAME "Sony Headphones App v" __HEADPHONES_APP_VERSION__
-#define APP_NAME_W (L"" APP_NAME)
-
 using Buffer = std::vector<char>;
 
 enum class DATA_TYPE : signed char
@@ -218,7 +193,7 @@ enum class COMMAND_TYPE : signed char
 	NCASM_SET_PARAM = 104,     // 0x68
 	NCASM_NTFY_PARAM = 105,    // 0x69
 
-	// v1 feature command IDs (proven on XM4, from PR #103)
+	// V1 feature command identifiers.
 	XM4_OPTIMIZER_PARAM = (signed char)0x84,
 	XM4_S2C_TOGGLE_PARAM = (signed char)0xf8,
 	XM4_S2C_OPTIONS_PARAM = (signed char)0xfc,
@@ -290,7 +265,7 @@ enum class SOUND_POSITION_PRESET : signed char
 	OUT_OF_RANGE = -1
 };
 
-//Needed for converting the ImGui Combo index into the VPT index.
+// Display order for the spatial-position selector.
 inline const SOUND_POSITION_PRESET SOUND_POSITION_PRESET_ARRAY[] = {
 	SOUND_POSITION_PRESET::OFF,
 	SOUND_POSITION_PRESET::FRONT_LEFT,

@@ -14,10 +14,6 @@ BluetoothWrapper::BluetoothWrapper(std::unique_ptr<IBluetoothConnector> connecto
     if (!_connector) throw std::invalid_argument("Bluetooth connector is required");
 }
 
-
-
-
-
 void BluetoothWrapper::setAckTimeout(std::chrono::milliseconds timeout) noexcept
 {
 	std::lock_guard guard(this->_ackMtx);
