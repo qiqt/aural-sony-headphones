@@ -22,19 +22,30 @@ QIcon battery(int percentage)
         QPainter painter(&pm);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::TextAntialiasing);
-        painter.setBrush(QColor("#a078ff"));
+        const QColor accent("#cdb8ff");
+        const qreal stroke = qMax(1.0, size / 16.0);
+        painter.setBrush(accent);
         painter.setPen(Qt::NoPen);
-        painter.drawRoundedRect(QRectF(0, 0, size, size), size * 0.22, size * 0.22);
+        painter.drawRoundedRect(QRectF(size - 2 * stroke, size * 0.38,
+                                       2 * stroke, size * 0.24),
+                                stroke * 0.5, stroke * 0.5);
+        const QRectF body(stroke * 0.5, size * 0.16,
+                          size - 2.5 * stroke, size * 0.68);
+        painter.setPen(QPen(accent, stroke));
+        painter.setBrush(QColor("#221735"));
+        painter.drawRoundedRect(body, stroke, stroke);
+
+        const QRectF textArea = body.adjusted(stroke * 0.5, 0, -stroke * 0.5, 0);
 
         QFont font(QStringLiteral("Segoe UI"));
         font.setBold(true);
-        font.setPixelSize(qRound(size * 0.75));
+        font.setPixelSize(qRound(size * 0.58));
         while (font.pixelSize() > 1 &&
-               QFontMetricsF(font).horizontalAdvance(label) > size * 0.9)
+               QFontMetricsF(font).horizontalAdvance(label) > textArea.width())
             font.setPixelSize(font.pixelSize() - 1);
         painter.setFont(font);
-        painter.setPen(QColor("#340080"));
-        painter.drawText(pm.rect(), Qt::AlignCenter, label);
+        painter.setPen(accent);
+        painter.drawText(textArea, Qt::AlignCenter, label);
         painter.end();
         icon.addPixmap(pm);
     }
