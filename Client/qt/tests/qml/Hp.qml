@@ -18,6 +18,8 @@ QtObject {
     property bool dsee: false
     property bool voiceGuidance: false
     property var mpDevices: []
+    property string lastDisconnected: ""
+    function mpDisconnect(mac) { lastDisconnected = mac }
     property var settingStatus: ({equalizer: "confirmed"})
     property int eqPreset: 9
     property bool eqSavePending: false

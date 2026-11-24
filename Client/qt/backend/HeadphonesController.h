@@ -287,7 +287,7 @@ public:
     Q_INVOKABLE void startOptimize();
     Q_INVOKABLE void cancelOptimize();
     Q_INVOKABLE void setEqBand(int index, int value);
-    Q_INVOKABLE void mpDisconnect(int slot);
+    Q_INVOKABLE void mpDisconnect(const QString& mac);
     // Cycle Noise Cancelling -> Ambient -> Off. Used by the tray menu.
     Q_INVOKABLE void cycleAmbientMode();
 

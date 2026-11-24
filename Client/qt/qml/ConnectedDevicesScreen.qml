@@ -47,7 +47,7 @@ Item {
                         }
                         Text { text: modelData.status; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
                         Item { Layout.fillHeight: true }
-                        AuralButton { text: "Disconnect"; danger: true; onClicked: Hp.mpDisconnect(modelData.slot) }
+                        AuralButton { text: "Disconnect"; danger: true; onClicked: Hp.mpDisconnect(modelData.mac) }
                     }
                 }
             }

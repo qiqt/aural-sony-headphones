@@ -986,3 +986,21 @@ TEST(controller_disconnect_before_initial_discovery_prevents_startup_connection)
     CHECK(!f.hp->connected());
     CHECK_EQ(f.fake->connectCount(), 0);
 }
+
+TEST(controller_reconnect_invalidates_extras_before_handshake_reply)
+{
+    ControllerFixture f;
+    CHECK(f.waitForDiscovery()); CHECK(f.connectTo(XM4));
+    QVariantMap lastNotified;
+    QObject observer;
+    QObject::connect(f.hp.get(), &HeadphonesController::diagnosticsChanged, &observer, [&] { lastNotified = f.hp->diagnostics(); });
+    f.hp->disconnectDevice();
+    CHECK(!lastNotified.value("connected").toBool());
+    CHECK(lastNotified.value("protocol").toString() == "Disconnected");
+    f.fake->setSonyServices(false, true);
+    CHECK(f.connectTo(XM3));
+    CHECK(f.hp->v2Info().contains("phase"));
+    CHECK(lastNotified.value("protocol").toString() == "V2");
+    CHECK(lastNotified.value("bluetoothName").toString() == QString::fromStdString(XM3.name));
+    f.hp->disconnectDevice();
+}

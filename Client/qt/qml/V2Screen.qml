@@ -20,7 +20,7 @@ ScrollView {
             model: (Hp.v2Info.audio || []).length
             delegate: ColumnLayout {
                 required property int index
-                readonly property var modelData: (Hp.v2Info.audio || [])[index] || ({})
+                readonly property var modelData: (Hp.v2Info.audio || [])[index] || ({title: "", ready: false, selector: -1, value: 0, status: "unknown"})
                 Layout.fillWidth: true
                 Text { text: modelData.title; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd }
                 SegmentedControl {
@@ -37,7 +37,7 @@ ScrollView {
             model: (Hp.v2Info.ambient || []).length
             delegate: Rectangle {
                 required property int index
-                readonly property var modelData: (Hp.v2Info.ambient || [])[index] || ({})
+                readonly property var modelData: (Hp.v2Info.ambient || [])[index] || ({ready: false, selector: -1, mode: -1, level: 0, minimum: 0, maximum: 1, step: 1, voice: false, voiceSupported: false, status: "unknown"})
                 Layout.fillWidth: true
                 radius: Theme.radiusLg; color: Theme.surfaceContainer
                 border.color: Theme.outlineVariant; border.width: 1
@@ -54,11 +54,12 @@ ScrollView {
                         onActivated: (i) => Hp.setV2Ambient(modelData.selector, i, modelData.level, modelData.voice)
                     }
                     AudioSlider {
+                        id: ambientSlider
                         objectName: "v2AmbientSlider"
                         Layout.fillWidth: true
                         enabled: modelData.ready && modelData.mode === 2
                         from: modelData.minimum; to: modelData.maximum; stepSize: modelData.step
-                        Binding on value { value: modelData.level }
+                        Binding on value { when: !ambientSlider.pressed; value: modelData.level }
                         onMoved: Hp.setV2Ambient(modelData.selector, modelData.mode, Math.round(value), modelData.voice)
                     }
                     RowLayout {
@@ -76,7 +77,7 @@ ScrollView {
             delegate: Rectangle {
                 id: equalizerCard
                 required property int index
-                readonly property var modelData: (Hp.v2Info.equalizers || [])[index] || ({})
+                readonly property var modelData: (Hp.v2Info.equalizers || [])[index] || ({title: "", selector: -1, presetIds: [], names: [], selected: -1, ready: false, read: false, status: "unknown", bandsEditable: false, bands: [], minimum: 0, maximum: 1})
                 Layout.fillWidth: true
                 radius: Theme.radiusLg; color: Theme.surfaceContainer
                 border.color: Theme.outlineVariant; border.width: 1
@@ -98,16 +99,17 @@ ScrollView {
                         model: (equalizerCard.modelData.bands || []).length
                         delegate: RowLayout {
                             required property int index
-                            readonly property var modelData: (equalizerCard.modelData.bands || [])[index] || ({})
+                            readonly property var modelData: (equalizerCard.modelData.bands || [])[index] || ({label: "", value: 0, index: -1})
                             readonly property var equalizer: equalizerCard.modelData
                             Layout.fillWidth: true
                             Text { Layout.preferredWidth: 85; text: modelData.label; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
                             AudioSlider {
+                                id: eqSlider
                                 objectName: "v2EqSlider"
                                 Layout.fillWidth: true
                                 enabled: equalizer.bandsEditable
                                 from: equalizer.minimum; to: equalizer.maximum; stepSize: 1
-                                Binding on value { value: modelData.value }
+                                Binding on value { when: !eqSlider.pressed; value: modelData.value }
                                 onMoved: Hp.setV2EqBand(equalizer.selector, modelData.index, Math.round(value))
                             }
                             Text { Layout.preferredWidth: 28; text: modelData.value; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }

@@ -330,6 +330,7 @@ public:
     // oldDevice == -1 resolves the current slot atomically. Addresses are retained
     // at request time so a subsequent list reorder cannot retarget the command.
 	void setMultiPointConnection(int connectionId, int newDevice, int oldDevice);
+    void disconnectMultipointDevice(const std::string& mac);
 
 	// The last complete NC/ASM report, every field kept. Empty until the device sends one.
 	std::optional<CommandSerializer::NcAsmReport> getNcAsmReport();
@@ -549,6 +550,7 @@ private:
 	void _pushNcAsm();
 	void _pushSpatial();
 	void _pushMultipoint();
+    void _setMultiPointConnectionLocked(int connectionId, int newDevice, int oldDevice);
 
 	int _batteryLevel = -1;
 	bool _batteryCharging = false;

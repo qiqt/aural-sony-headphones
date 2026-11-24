@@ -144,12 +144,33 @@ void Headphones::setMultiPointConnection(int connectionId, int newDevice, int ol
 {
     UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
+    _setMultiPointConnectionLocked(connectionId, newDevice, oldDevice);
+}
+
+void Headphones::disconnectMultipointDevice(const std::string& mac)
+{
+    UiRevisionGuard changed{_uiRevision};
+    std::lock_guard guard(_propertyMtx);
+    if (mac.empty()) return;
+    const int indices[] = {_dev1.current, _dev2.current};
+    for (int slot = 0; slot < 2; ++slot) {
+        const int index = indices[slot];
+        if (index > 0 && index < static_cast<int>(_savedDevices.size()) && _savedDevices[index].mac == mac) {
+            _setMultiPointConnectionLocked(slot + 1, 0, index);
+            return;
+        }
+    }
+}
+
+void Headphones::_setMultiPointConnectionLocked(int connectionId, int newDevice, int oldDevice)
+{
     if (connectionId != 1 && connectionId != 2) return;
     auto& slot = connectionId == 1 ? _dev1 : _dev2;
     if (oldDevice == -1) oldDevice = slot.current;
     if (oldDevice < 0 || newDevice < 0 || oldDevice >= static_cast<int>(_savedDevices.size()) ||
         newDevice >= static_cast<int>(_savedDevices.size())) return;
     const auto targets = std::make_pair(_savedDevices[oldDevice].mac, _savedDevices[newDevice].mac);
+    if (targets.first.empty() && targets.second.empty()) return;
     const bool newTargets = targets != _multipointTargets[connectionId - 1];
     _multipointTargets[connectionId - 1] = targets;
     const auto revision = slot.revision;
@@ -1177,6 +1198,7 @@ void Headphones::_pushMultipoint()
 
 		std::lock_guard guard(this->_propertyMtx);
 		slot->markRequestSent(rev);
+        if (slot->revision == rev) _multipointTargets[index] = {};
 	}
 }
 

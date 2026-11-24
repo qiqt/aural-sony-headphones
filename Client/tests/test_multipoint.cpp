@@ -424,3 +424,51 @@ TEST(multipoint_disconnect_keeps_address_across_reordered_reports)
     }
     CHECK(found);
 }
+
+TEST(multipoint_empty_disconnect_never_queues_a_write)
+{
+    EngineFixture f;
+    f.start();
+    f.hp.setMultiPointConnection(1, 0, -1);
+    CHECK(!f.hp.isChanged());
+    CHECK_EQ(f.hp.getStatuses().multipoint, SettingStatus::Unknown);
+    const std::string mac = "AA:BB:CC:DD:EE:FF";
+    Buffer report = hex("39 01 01");
+    report.insert(report.end(), mac.begin(), mac.end());
+    report.insert(report.end(), {1, 0});
+    CHECK(deliver(f, report, DATA_TYPE::DATA_MDR_NO2));
+    f.hp.disconnectMultipointDevice(mac);
+    f.hp.setChanges();
+    CHECK(deliver(f, hex("39 01 00"), DATA_TYPE::DATA_MDR_NO2));
+    f.fake().clearSent();
+    f.hp.setMultiPointConnection(1, 0, -1);
+    f.hp.disconnectMultipointDevice(mac);
+    CHECK(!f.hp.isChanged());
+    f.hp.setChanges();
+    CHECK(f.fake().sentCommands().empty());
+    CHECK_EQ(f.hp.getStatuses().multipoint, SettingStatus::Confirmed);
+}
+
+TEST(multipoint_clicked_address_survives_active_slot_swap)
+{
+    EngineFixture f;
+    f.start();
+    const std::string phone = "AA:BB:CC:DD:EE:FF", computer = "11:22:33:44:55:66";
+    auto report = [&](bool swapped) {
+        Buffer bytes = hex("39 01 02");
+        for (const auto& mac : {phone, computer}) {
+            bytes.insert(bytes.end(), mac.begin(), mac.end());
+            bytes.push_back((mac == phone) != swapped ? 1 : 2);
+            bytes.push_back(0);
+        }
+        return bytes;
+    };
+    CHECK(deliver(f, report(false), DATA_TYPE::DATA_MDR_NO2));
+    const auto clickedMac = f.hp.getDevices().at(f.hp.getConnectedDevices().first).mac;
+    CHECK(deliver(f, report(true), DATA_TYPE::DATA_MDR_NO2));
+    f.hp.disconnectMultipointDevice(clickedMac);
+    f.hp.setChanges();
+    const auto sent = f.fake().sentCommands();
+    CHECK_EQ(sent.size(), size_t(1));
+    CHECK(sent.front().messageBytes == CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, phone));
+}

@@ -243,12 +243,13 @@ int soundPositionIndex(SOUND_POSITION_PRESET position)
     return 0;
 }
 
-QVariantMap mpEntry(const QString& name, const QString& status, int slot)
+QVariantMap mpEntry(const QString& name, const QString& status, int slot, const QString& mac)
 {
     QVariantMap m;
     m["name"] = name;
     m["status"] = status;
     m["slot"] = slot;
+    m["mac"] = mac;
     return m;
 }
 
@@ -307,8 +308,8 @@ void HeadphonesController::init()
         _autoPowerOff = static_cast<int>(AUTO_POWER_OFF::WHEN_TAKEN_OFF); // one of the XM4's choices
         _soundPosition = 3; // Front
         _mpDevices = QVariantList{
-            mpEntry("MacBook Pro", "Active audio source", 1),
-            mpEntry("iPhone 15", "Standby", 2)
+            mpEntry("MacBook Pro", "Active audio source", 1, "00:00:00:00:00:01"),
+            mpEntry("iPhone 15", "Standby", 2, "00:00:00:00:00:02")
         };
         _touchPanel = toggleMap(demoToggle(true));
         _wearingControl = toggleMap(demoToggle(true));
@@ -1018,19 +1019,19 @@ void HeadphonesController::finishMultipointReconnect(const QString& message)
     emit toast(message);
 }
 
-void HeadphonesController::mpDisconnect(int slot)
+void HeadphonesController::mpDisconnect(const QString& mac)
 {
     if (!supportsMultipoint()) return;
     if (_demo)
     {
         QVariantList keep;
         for (const auto& v : _mpDevices)
-            if (v.toMap().value("slot").toInt() != slot) keep.push_back(v);
+            if (v.toMap().value("mac").toString() != mac) keep.push_back(v);
         _mpDevices = keep;
         emit multipointChanged();
         return;
     }
-    _headphones.setMultiPointConnection(slot, 0, -1);
+    _headphones.disconnectMultipointDevice(mac.toStdString());
 }
 
 // ---- Connection lifecycle ----
@@ -1145,6 +1146,8 @@ void HeadphonesController::setConn(Conn c)
 {
     if (_conn == c) return;
     _conn = c;
+    _extrasRevision.reset();
+    syncExtras();
     emit connectionChanged();
     // Which controls are offered depends on being connected and on which device, so the
     // availability properties move with the connection, not only with a capability reply.
@@ -1446,7 +1449,7 @@ void HeadphonesController::emitLiveDeltas()
         auto add = [&](int idx, int slot) {
             if (idx > 0 && idx < static_cast<int>(devs.size()))
                 list.push_back(mpEntry(QString::fromStdString(devs[idx].name),
-                                       slot == 1 ? "Active" : "Standby", slot));
+                                       slot == 1 ? "Active" : "Standby", slot, QString::fromStdString(devs[idx].mac)));
         };
         add(conn.first, 1);
         add(conn.second, 2);
@@ -1800,10 +1803,10 @@ void HeadphonesController::teardownConnection(MultipointChange* changeAtEnd)
     if (changeAtEnd)
         *changeAtEnd = _headphones.getMultipointChange();
     _headphones.resetState();
+    setConn(Conn::Disconnected);
     resetUiState();
 
     setSyncing(false);
-    setConn(Conn::Disconnected);
 }
 
 // Everything the controller mirrors locally goes back to its default, so a second device
