@@ -853,6 +853,36 @@ TEST(controller_v1_ambient_uses_device_range_and_encoding)
     CHECK(!f.hp->supportsSpeakToChat()); CHECK(!f.hp->supportsMultipoint());
 }
 
+TEST(controller_s2c_toggle_preserves_unread_details)
+{
+    ControllerFixture f;
+    DeviceScript script;
+    script.on("06 01", replies::hex("07 01 01 F5"))
+        .on("F6 05", replies::hex("F7 05 00 00"));
+    script.installOn(*f.fake);
+    CHECK(f.waitForDiscovery()); CHECK(f.connectTo(XM4));
+    CHECK(spinUntil([&] { return f.hp->supportsSpeakToChat() && !f.hp->syncing(); }));
+    f.hp->setS2cEnabled(true);
+    CHECK(spinUntil([&] { return wasSent(*f.fake, "F8 05 01 01") && !f.hp->syncing(); }));
+    CHECK(!wasSent(*f.fake, "FC 05 00 00 00 00"));
+}
+
+TEST(controller_voice_focus_clamps_to_its_advertised_range)
+{
+    ControllerFixture f;
+    DeviceScript script;
+    script.on("06 01", replies::hex("07 01 01 62"))
+        .on("60 02", replies::hex("61 02 02 03 01 02 00 14 01 02"))
+        .on("66 02", replies::hex("67 02 11 02 00 01 00 0A"));
+    script.installOn(*f.fake);
+    CHECK(f.waitForDiscovery()); CHECK(f.connectTo(XM4));
+    CHECK(spinUntil([&] { return f.hp->ambientAvailable() && f.hp->ambientMode() == 1 &&
+        f.hp->asmMaximum() == 20 && f.hp->asmLevel() == 10 && f.hp->focusOnVoiceAvailable(); }));
+    f.hp->setFocusOnVoice(true);
+    CHECK_EQ(f.hp->asmLevel(), 2);
+    CHECK(spinUntil([&] { return wasSent(*f.fake, "68 02 11 02 00 01 01 02"); }));
+}
+
 int main(int argc, char* argv[])
 {
 	QCoreApplication app(argc, argv);

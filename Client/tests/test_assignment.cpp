@@ -120,3 +120,20 @@ TEST(assignment_write_preserves_capability_order_and_all_other_keys)
     CHECK(!SonyAssignment::buildSet(*cap, state, 2, 0x10));
     CHECK(!SonyAssignment::buildSet(*cap, state, 0, 0xff));
 }
+
+TEST(assignment_new_edit_does_not_replay_failed_other_key)
+{
+    EngineFixture f;
+    f.start();
+    CHECK(deliver(f, replies::hex("07 01 01 F6")));
+    CHECK(deliver(f, replies::hex("F1 06 02 01 01 20 02 20 00 10 00 00 00 00 02 00 00 FF 00")));
+    CHECK(deliver(f, replies::hex("F3 06 02 00 00")));
+    CHECK(deliver(f, replies::hex("F7 06 02 20 00")));
+    CHECK(f.hp.setAssignment(0, 0x10));
+    CHECK(deliver(f, replies::hex("F5 06 02 01 00")));
+    CHECK_THROWS(f.hp.setChanges(), RecoverableException);
+    CHECK_EQ(f.hp.getStatuses().assignment, SettingStatus::Failed);
+    CHECK(f.hp.setAssignment(1, 0xff));
+    f.hp.setChanges();
+    CHECK(wasSent(f.fake(), "F8 06 02 20 FF"));
+}

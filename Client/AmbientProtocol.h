@@ -101,7 +101,7 @@ inline std::optional<Buffer> buildModeSet(const Capability& cap,
     if (!cap.modeWritesSupported()) return std::nullopt;
     RawEdit edit;
     edit.effect = mode == Mode::Off ? 0 : 0x11;
-    edit.asmId = asmId;
+    if (mode != Mode::Off) edit.asmId = asmId;
     switch (mode) {
     case Mode::Off:
         break;

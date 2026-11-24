@@ -2016,7 +2016,9 @@ bool Headphones::setAssignment(size_t index, unsigned char preset)
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_advertisedLocked(FUNCTION_TYPE::ASSIGNABLE_SETTINGS) || !this->_assignmentCapability || !this->_assignmentAvailable || !this->_assignments.reported ||
 		index >= this->_assignmentAvailable->size() || !(*this->_assignmentAvailable)[index]) return false;
-	auto values = this->_assignments.desired;
+	auto values = (this->_assignments.status == SettingStatus::Requested ||
+		this->_assignments.status == SettingStatus::Acknowledged)
+		? this->_assignments.desired : *this->_assignments.reported;
 	if (!SonyAssignment::buildSet(*this->_assignmentCapability, values, index, preset)) return false;
 	values[index] = preset;
 	this->_assignments.setDesired(values);

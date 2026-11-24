@@ -59,6 +59,14 @@ TEST(ambientcap_onoff_and_unknown_level_mapping_are_distinct)
     CHECK(!SonyAmbient::buildModeSet(level, current, SonyAmbient::Mode::NoiseCancelling, 0, 0));
 }
 
+TEST(ambientcap_off_preserves_reported_voice_mode_and_level)
+{
+    const auto cap = *SonyAmbient::parseCapability(ambientMessage("61 02 02 03 01 02 00 14 01 02"));
+    const auto current = ambientReport("67 02 11 02 00 01 00 0A");
+    auto wire = SonyAmbient::buildModeSet(cap, current, SonyAmbient::Mode::Off, 10, 1);
+    CHECK(wire && *wire == replies::hex("68 02 00 02 00 01 00 0A"));
+}
+
 TEST(ambientcap_rejects_truncation_tables_duplicates_and_invalid_enums)
 {
     auto m = ambientMessage("61 02 02 03 01 02 00 14 01 02");

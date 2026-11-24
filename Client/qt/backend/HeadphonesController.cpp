@@ -491,7 +491,8 @@ void HeadphonesController::pushAmbient()
         break;
     case 1: // Ambient Sound
         _headphones.setAmbientSoundControl(true);
-        _headphones.setAsmLevel(std::clamp(_asmLevel, 1, std::max(1, asmMaximum())));
+        _asmLevel = std::clamp(_asmLevel, 1, std::max(1, asmMaximum()));
+        _headphones.setAsmLevel(_asmLevel);
         break;
     default: // Off
         _headphones.setAmbientSoundControl(false);
@@ -536,7 +537,7 @@ void HeadphonesController::setFocusOnVoice(bool v)
     if (!ambientAvailable() || (v && !focusOnVoiceAvailable())) return;
     if (_focusOnVoice == v) return;
     _focusOnVoice = v;
-    _headphones.setFocusOnVoice(v);
+    pushAmbient();
     emit ambientChanged();
 }
 
@@ -675,7 +676,6 @@ void HeadphonesController::setS2cEnabled(bool v)
     if (_s2cEnabled == v) return;
     _s2cEnabled = v;
     _headphones.setS2CToggle(v ? S2C_TOGGLE::ACTIVE : S2C_TOGGLE::INACTIVE);
-    _headphones.setS2COptions(_s2cSensitivity, _s2cVoice, _s2cAutoOff);
     emit s2cChanged();
 }
 
@@ -1267,7 +1267,7 @@ void HeadphonesController::pump()
         }
     }
 
-    if (_bt.isConnected() && !_connectionInitialized) handleConnectionSetup();
+    if (connected() && _bt.isConnected() && !_connectionInitialized) handleConnectionSetup();
 
     // --- Command future (settings push) + battery, v1 only ---
     if (_commandFuture.ready())
@@ -1332,7 +1332,7 @@ void HeadphonesController::pump()
         }
     }
 
-    if (_bt.isConnected())
+    if (connected() && _bt.isConnected())
     {
         pollOsBattery();
         emitLiveDeltas();
@@ -1386,6 +1386,7 @@ void HeadphonesController::refreshSettingStatus()
 
 void HeadphonesController::emitLiveDeltas()
 {
+    const auto statuses = _headphones.getStatuses();
     int bat = batteryLevel();
     bool chg = _headphones.isBatteryCharging();
     if (bat != _cBattery || chg != _cCharging) { _cBattery = bat; _cCharging = chg; emit batteryChanged(); }
@@ -1396,7 +1397,8 @@ void HeadphonesController::emitLiveDeltas()
     bool ambientOn = _headphones.getAmbientSoundControl();
     int asmLevel = _headphones.getAsmLevel();
     bool focusVoice = _headphones.getFocusOnVoice();
-    if (ambientOn != _cAmbientOn || asmLevel != _cAsmLevel || focusVoice != _cFocusVoice)
+    if (statuses.ambient != SettingStatus::Requested &&
+        (ambientOn != _cAmbientOn || asmLevel != _cAsmLevel || focusVoice != _cFocusVoice))
     {
         _cAmbientOn = ambientOn;
         _cAsmLevel = asmLevel;
@@ -1432,7 +1434,7 @@ void HeadphonesController::emitLiveDeltas()
     bool fav = _headphones.isFocusOnVoiceAvailable();
     if (fav != _cFocusAvail) { _cFocusAvail = fav; emit ambientChanged(); }
 
-    syncReadBack(_headphones.getStatuses());
+    syncReadBack(statuses);
     syncControls();
     syncMultipoint();
     syncExtras();
