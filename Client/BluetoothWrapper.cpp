@@ -22,6 +22,7 @@ void BluetoothWrapper::setAckTimeout(std::chrono::milliseconds timeout) noexcept
 
 std::chrono::milliseconds BluetoothWrapper::ackTimeout() const noexcept
 {
+	std::lock_guard guard(this->_ackMtx);
 	return this->_ackTimeout;
 }
 
@@ -208,6 +209,13 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
 	try
 	{
 		this->_connector->connect(addr, this->_protocol.load());
+		// disconnect() can run after the discovery check but before the connector
+		// registers its new socket. Never leave that late connection alive.
+		if (this->_aborted.load())
+		{
+			this->_connector->disconnect();
+			throw RecoverableException("Connection cancelled", true);
+		}
 	}
 	catch (const std::exception& exc)
 	{

@@ -111,7 +111,7 @@ private:
 
 	std::mutex _commandMtx;          // serializes a whole command (send + wait-for-ack); NOT taken by the Listener
 	std::mutex _sendMtx;             // guards the raw socket write; shared by sendCommand and sendAck
-	std::mutex _ackMtx;              // guards the command-in-flight bookkeeping below
+	mutable std::mutex _ackMtx;      // guards ACK timeout and command-in-flight bookkeeping below
 	std::condition_variable _ackCv;
 	unsigned long long _nextCommandId = 1;   // guarded by _ackMtx
 	unsigned long long _pendingCommandId = 0; // command currently waiting for an ACK, 0 = none

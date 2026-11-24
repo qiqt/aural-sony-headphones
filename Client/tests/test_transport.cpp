@@ -203,6 +203,18 @@ TEST(transport_short_writes_complete_commands_and_acknowledgements)
     }));
 }
 
+TEST(transport_cancel_before_connector_starts_closes_late_connection)
+{
+    EngineFixture f;
+    f.fake().beforeConnect = [&] { f.bt.disconnect(); };
+    CHECK_THROWS(f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1), RecoverableException);
+    CHECK(!f.bt.isConnected());
+
+    f.fake().beforeConnect = {};
+    f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
+    CHECK(f.bt.isConnected());
+}
+
 TEST(transport_zero_progress_after_partial_write_closes_the_link)
 {
     EngineFixture f;

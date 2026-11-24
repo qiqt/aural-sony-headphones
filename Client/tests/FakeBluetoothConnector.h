@@ -137,6 +137,7 @@ public:
 
 	void connect(const std::string& addr, SonyProtocol protocol) override
 	{
+		if (beforeConnect) beforeConnect();
 		std::unique_lock<std::mutex> guard(_mtx);
 		++_connectAttempts;
 		_connectAborted = false;
@@ -201,6 +202,10 @@ public:
 		_cv.wait(guard, [this] { return !_batteryBlocked; });
 		return _osBattery;
 	}
+
+	// Configure before starting an attempt. Models cancellation just before the
+	// connector registers its new socket, after the wrapper's discovery check.
+	std::function<void()> beforeConnect;
 
 	// ---------------- scripting ----------------
 
