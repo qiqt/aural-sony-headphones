@@ -396,3 +396,31 @@ TEST(multipoint_a_write_lost_with_the_link_is_left_for_the_host_to_verify)
 	CHECK_EQ(change(s.f).step, MultipointStep::Sent);
 	CHECK_EQ(s.f.hp.isChanged(), false);
 }
+
+TEST(multipoint_disconnect_keeps_address_across_reordered_reports)
+{
+    EngineFixture f;
+    f.start();
+    const std::string phone = "AA:BB:CC:DD:EE:FF", computer = "11:22:33:44:55:66";
+    auto report = [&](bool reordered) {
+        Buffer bytes = hex("39 01 02");
+        for (const auto& mac : reordered ? std::vector<std::string>{computer, phone} : std::vector<std::string>{phone, computer}) {
+            bytes.insert(bytes.end(), mac.begin(), mac.end());
+            bytes.push_back(mac == phone ? 1 : 2);
+            bytes.push_back(0);
+        }
+        return bytes;
+    };
+    CHECK(deliver(f, report(false), DATA_TYPE::DATA_MDR_NO2));
+    f.hp.setMultiPointConnection(1, 0, -1);
+    CHECK(deliver(f, report(true), DATA_TYPE::DATA_MDR_NO2));
+    f.hp.setChanges();
+    const auto expected = CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, phone);
+    const auto wrong = CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, computer);
+    bool found = false;
+    for (const auto& cmd : f.fake().sentCommands()) {
+        CHECK(cmd.messageBytes != wrong);
+        if (cmd.messageBytes == expected) found = true;
+    }
+    CHECK(found);
+}

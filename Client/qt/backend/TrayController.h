@@ -66,4 +66,5 @@ private:
 
     bool _updating = false;   // guards against user-signal loops while we refresh check states
     bool _lastConnected = false;
+    int _iconKey = -3; // -2 disconnected, -1 connected without a battery value
 };

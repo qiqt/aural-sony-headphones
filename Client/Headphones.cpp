@@ -11,6 +11,7 @@ Headphones::Headphones(BluetoothWrapper& conn) : _conn(conn)
 
 void Headphones::setAmbientSoundControl(bool val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_ambientSoundControl.setDesired(val);
 }
@@ -30,6 +31,7 @@ bool Headphones::isFocusOnVoiceAvailable()
 
 void Headphones::setFocusOnVoice(bool val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_focusOnVoice.setDesired(val);
 }
@@ -48,6 +50,7 @@ bool Headphones::isSetAsmLevelAvailable()
 
 void Headphones::setAsmLevel(int val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_asmLevel.setDesired(val);
 }
@@ -60,6 +63,7 @@ int Headphones::getAsmLevel()
 
 void Headphones::setSurroundPosition(SOUND_POSITION_PRESET val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_surroundPosition.setDesired(val);
 }
@@ -72,6 +76,7 @@ SOUND_POSITION_PRESET Headphones::getSurroundPosition()
 
 void Headphones::setVptType(int val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_vptType.setDesired(val);
 }
@@ -84,6 +89,7 @@ int Headphones::getVptType()
 
 void Headphones::setOptimizerState(OPTIMIZER_STATE val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_optimizerState.setDesired(val);
 }
@@ -96,12 +102,14 @@ OPTIMIZER_STATE Headphones::getOptimizerState()
 
 void Headphones::setS2CToggle(S2C_TOGGLE val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_speakToChat.setDesired(val);
 }
 
 void Headphones::setS2COptions(int sensitivity, bool voice, int offTime)
 {
+    UiRevisionGuard changed{_uiRevision};
 	unsigned int sens = static_cast<unsigned int>(sensitivity);
 	unsigned int time = static_cast<unsigned int>(offTime);
 	std::lock_guard guard(this->_propertyMtx);
@@ -134,11 +142,22 @@ std::pair<int, int> Headphones::getConnectedDevices()
 
 void Headphones::setMultiPointConnection(int connectionId, int newDevice, int oldDevice)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
-	if (connectionId == 1)
-		this->_dev1.setDesired(newDevice);
-	else
-		this->_dev2.setDesired(newDevice);
+    if (connectionId != 1 && connectionId != 2) return;
+    auto& slot = connectionId == 1 ? _dev1 : _dev2;
+    if (oldDevice == -1) oldDevice = slot.current;
+    if (oldDevice < 0 || newDevice < 0 || oldDevice >= static_cast<int>(_savedDevices.size()) ||
+        newDevice >= static_cast<int>(_savedDevices.size())) return;
+    const auto targets = std::make_pair(_savedDevices[oldDevice].mac, _savedDevices[newDevice].mac);
+    const bool newTargets = targets != _multipointTargets[connectionId - 1];
+    _multipointTargets[connectionId - 1] = targets;
+    const auto revision = slot.revision;
+    slot.setDesired(newDevice);
+    if (newTargets && slot.revision == revision) {
+        ++slot.revision;
+        slot.status = SettingStatus::Requested;
+    }
 }
 
 unsigned int Headphones::getCapabilities()
@@ -242,6 +261,7 @@ bool Headphones::_writableLocked(const DiscoveredToggle& toggle) const
 
 bool Headphones::setTouchPanel(bool enabled)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_writableLocked(this->_touchPanel))
 		return false;
@@ -251,6 +271,7 @@ bool Headphones::setTouchPanel(bool enabled)
 
 bool Headphones::setWearingControl(bool enabled)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_writableLocked(this->_wearingControl))
 		return false;
@@ -316,6 +337,7 @@ void Headphones::installAlertHandling()
 
 bool Headphones::setMultipointMode(bool enabled)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_alertHandling || !this->_writableLocked(this->_multipointMode))
 		return false;
@@ -354,6 +376,7 @@ MultipointChange Headphones::getMultipointChange()
 
 bool Headphones::answerMultipointAlert(unsigned char messageId, bool accept)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	// Only the alert awaiting the user, quoted back with the ID the device gave it.
 	if (this->_mpStep != MultipointStep::Confirming || !this->_mpAlert || this->_mpAlert->messageId != messageId)
@@ -367,6 +390,7 @@ bool Headphones::answerMultipointAlert(unsigned char messageId, bool accept)
 
 void Headphones::abandonMultipointChange()
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	// Only a change the device owes an answer for. An alert awaits the user, not the device, and
 	// a write still waiting for its ACK is the transport's to time out.
@@ -565,6 +589,7 @@ SettingsStatus Headphones::getStatuses()
 
 void Headphones::setEqualizer(const EqualizerConfig& requested)
 {
+    UiRevisionGuard changed{_uiRevision};
 	EqualizerConfig cfg = requested;
 	// Callers fill preset from the signed EQ_PRESET enum (MANUAL arrives as -96). Keep the
 	// EqPresetId byte instead, so a request and a device report of one preset compare equal.
@@ -591,6 +616,7 @@ void Headphones::setEqualizer(const EqualizerConfig& requested)
 
 bool Headphones::saveEqualizerCurve(unsigned char targetPreset, int clearBass, const std::vector<int>& bands)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_expireEqualizerSaveLocked();
 	if (this->_eqSaveStep != EqSaveStep::Idle) return false;
@@ -618,6 +644,7 @@ void Headphones::_expireEqualizerSaveLocked()
 		this->_eqSaveStep = EqSaveStep::Idle;
 		++this->_eqSaveToken;
 		this->_eq.status = SettingStatus::Failed;
+        _uiRevision.fetch_add(1);
 	}
 }
 
@@ -676,6 +703,7 @@ EqualizerConfig Headphones::getEqualizer()
 
 void Headphones::setAudioUpsampling(bool val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_audioUpsampling.setDesired(val);
 }
@@ -688,6 +716,7 @@ bool Headphones::getAudioUpsampling()
 
 void Headphones::setVoiceGuidance(bool val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	this->_voiceGuidance.setDesired(val);
 }
@@ -700,6 +729,7 @@ bool Headphones::getVoiceGuidance()
 
 void Headphones::setAutoPowerOff(AUTO_POWER_OFF val)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 
 	AutoPowerOffConfig cfg;
@@ -788,6 +818,7 @@ bool Headphones::isChanged()
 
 void Headphones::setChanges()
 {
+    UiRevisionGuard changed{_uiRevision};
     if (_conn.getProtocol() == SonyProtocol::V2) { _pushV2Changes(); return; }
 	// One pass over every pending setting. Each group snapshots its value + revision under
 	// the lock, sends with the lock released (the Listener needs it to apply replies), then
@@ -1116,25 +1147,26 @@ void Headphones::_pushMultipoint()
 {
 	Property<int>* slots[2] = { &this->_dev1, &this->_dev2 };
 
-	for (auto* slot : slots)
+	for (size_t index = 0; index < 2; ++index)
 	{
-		int desired = 0, current = 0;
+        auto* slot = slots[index];
+        std::string disconnectMac, connectMac;
 		unsigned long long rev = 0;
 		{
 			std::lock_guard guard(this->_propertyMtx);
 			if (slot->isFulfilled())
 				continue;
-			desired = slot->desired;
-			current = slot->current;
+            disconnectMac = _multipointTargets[index].first;
+            connectMac = _multipointTargets[index].second;
 			rev = slot->revision;
 		}
 
 		try
 		{
-			if (current != 0)
-				this->_disconnectDevice(current);
-			if (desired != 0)
-				this->_connectDevice(desired);
+            if (!disconnectMac.empty())
+                _conn.sendCommand(CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, disconnectMac), DATA_TYPE::DATA_MDR_NO2);
+            if (!connectMac.empty())
+                _conn.sendCommand(CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::CONNECT, connectMac), DATA_TYPE::DATA_MDR_NO2);
 		}
 		catch (...)
 		{
@@ -1150,6 +1182,7 @@ void Headphones::_pushMultipoint()
 
 void Headphones::queryState()
 {
+    UiRevisionGuard changed{_uiRevision};
     if (_conn.getProtocol() == SonyProtocol::V2) { _queryV2State(); return; }
 	// v1 connect handshake. Each send blocks only until it's ACKed; the actual replies
 	// arrive asynchronously on the Listener thread and land in setStateFromReply().
@@ -1233,34 +1266,6 @@ void Headphones::queryDevices()
 		DATA_TYPE::DATA_MDR_NO2);
 }
 
-void Headphones::_connectDevice(int deviceIdx)
-{
-	std::string mac;
-	{
-		std::lock_guard guard(this->_propertyMtx);
-		if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
-			return;
-		mac = this->_savedDevices[deviceIdx].mac;
-	}
-	this->_conn.sendCommand(
-		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::CONNECT, mac),
-		DATA_TYPE::DATA_MDR_NO2);
-}
-
-void Headphones::_disconnectDevice(int deviceIdx)
-{
-	std::string mac;
-	{
-		std::lock_guard guard(this->_propertyMtx);
-		if (deviceIdx <= 0 || deviceIdx >= static_cast<int>(this->_savedDevices.size()))
-			return;
-		mac = this->_savedDevices[deviceIdx].mac;
-	}
-	this->_conn.sendCommand(
-		CommandSerializer::serializeMultiPointCommand(MULTI_POINT_COMMANDS::DISCONNECT, mac),
-		DATA_TYPE::DATA_MDR_NO2);
-}
-
 void Headphones::requestBattery()
 {
     if (_conn.getProtocol() == SonyProtocol::V2) {
@@ -1274,6 +1279,7 @@ void Headphones::requestBattery()
 
 void Headphones::setStateFromReply(const CommandSerializer::Message& msg)
 {
+    UiRevisionGuard changed{_uiRevision};
     if (_conn.getProtocol() == SonyProtocol::V2) { _applyV2(msg); return; }
 	if (msg.messageBytes.empty())
 		return;
@@ -1868,6 +1874,7 @@ bool Headphones::isBatteryCharging()
 
 void Headphones::resetState()
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(this->_propertyMtx);
     _v2AudioCapabilities.clear(); _v2AudioReports.clear(); _v2AudioAvailable.clear();
     _v2Codec.reset(); _v2Effect.reset();
@@ -1942,6 +1949,7 @@ void Headphones::resetState()
 	this->_savedDevices = { BluetoothDevice{"", ""} };
 	this->_dev1.reset(0);
 	this->_dev2.reset(0);
+    _multipointTargets = {};
 }
 
 std::optional<SonyEq::Capability> Headphones::getEqualizerCapability()
@@ -1965,6 +1973,7 @@ bool Headphones::connectionModeReady()
 
 bool Headphones::setConnectionMode(SonyAudio::ConnectionMode mode)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_advertisedLocked(FUNCTION_TYPE::CONNECTION_MODE) || !this->_connectionModeCapable ||
 		!this->_connectionModeAvailable.value_or(false) || !this->_connectionMode.reported)
@@ -2013,6 +2022,7 @@ std::optional<std::vector<bool>> Headphones::getAssignmentAvailability()
 
 bool Headphones::setAssignment(size_t index, unsigned char preset)
 {
+    UiRevisionGuard changed{_uiRevision};
 	std::lock_guard guard(this->_propertyMtx);
 	if (!this->_advertisedLocked(FUNCTION_TYPE::ASSIGNABLE_SETTINGS) || !this->_assignmentCapability || !this->_assignmentAvailable || !this->_assignments.reported ||
 		index >= this->_assignmentAvailable->size() || !(*this->_assignmentAvailable)[index]) return false;

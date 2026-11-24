@@ -3,6 +3,7 @@
 #include "Constants.h"
 #include "Exceptions.h"
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,7 +28,9 @@ public:
     IBluetoothConnector(const IBluetoothConnector&) = delete;
     IBluetoothConnector& operator=(const IBluetoothConnector&) = delete;
 
-    virtual void connect(const std::string& address, SonyProtocol protocol) = 0;
+    // Check cancellation while registering the channel, before starting blocking I/O.
+    virtual void connect(const std::string& address, SonyProtocol protocol,
+        const std::function<bool()>& cancelled = {}) = 0;
     virtual void disconnect() noexcept = 0;
     virtual bool isConnected() noexcept = 0;
     virtual int send(char* bytes, std::size_t size) = 0;

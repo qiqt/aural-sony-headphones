@@ -1,5 +1,6 @@
 #include "SocketChannel.h"
 #include "WindowsBluetoothConnector.h"
+#include "WindowsText.h"
 #include "BluetoothAddress.h"
 #include "ProtocolTrace.h"
 
@@ -88,12 +89,14 @@ std::shared_ptr<SocketChannel> WindowsBluetoothConnector::channel()
     return _channel;
 }
 
-void WindowsBluetoothConnector::connect(const std::string& address, SonyProtocol protocol)
+void WindowsBluetoothConnector::connect(const std::string& address, SonyProtocol protocol,
+    const std::function<bool()>& cancelled)
 {
     std::shared_ptr<SocketChannel> previous;
     unsigned long long generation;
     {
         std::lock_guard guard(_channelMutex);
+        if (cancelled && cancelled()) throw ConnectionClosedException("Connection was cancelled");
         generation = ++_generation;
         previous = std::exchange(_channel, {});
     }
@@ -113,7 +116,8 @@ void WindowsBluetoothConnector::connect(const std::string& address, SonyProtocol
             throw windowsError("Configure Bluetooth socket", ::WSAGetLastError());
     {
         std::lock_guard guard(_channelMutex);
-        if (_generation != generation) throw ConnectionClosedException("Connection was cancelled");
+        if (_generation != generation || (cancelled && cancelled()))
+            throw ConnectionClosedException("Connection was cancelled");
         _channel = next;
     }
     try
@@ -256,8 +260,8 @@ int WindowsBluetoothConnector::getDeviceBatteryLevel(const std::string& deviceNa
 	if (deviceName.empty())
 		return -1;
 
-	// Device names ("WH-1000XM4") are ASCII; widen for the W-form property APIs.
-	std::wstring wantName(deviceName.begin(), deviceName.end());
+    const std::wstring wantName = windowsUtf16(deviceName);
+    if (wantName.empty()) return -1;
 
 	HDEVINFO devInfoSet = SetupDiGetClassDevs(nullptr, nullptr, nullptr, DIGCF_PRESENT | DIGCF_ALLCLASSES);
 	if (devInfoSet == INVALID_HANDLE_VALUE)
@@ -267,26 +271,20 @@ int WindowsBluetoothConnector::getDeviceBatteryLevel(const std::string& deviceNa
 	SP_DEVINFO_DATA devInfo = { sizeof(SP_DEVINFO_DATA) };
 	for (DWORD i = 0; SetupDiEnumDeviceInfo(devInfoSet, i, &devInfo); i++)
 	{
-		// Match the PnP node whose name carries the headphone's product name. Several nodes
-		// (Hands-Free, AVRCP, ...) share that name; only the base device exposes the battery,
-		// so keep scanning until we find one that has the property.
-		std::wstring name;
-		if (!readStringProperty(devInfoSet, &devInfo, PKEY_DeviceName, name) &&
-			!readStringProperty(devInfoSet, &devInfo, PKEY_FriendlyName, name))
-			continue;
-
-		if (name.find(wantName) == std::wstring::npos)
-			continue;
-
 		DEVPROPTYPE propType = 0;
 		DWORD requiredSize = 0;
 		BYTE level = 0;
-		if (SetupDiGetDevicePropertyW(devInfoSet, &devInfo, &PKEY_BluetoothBattery, &propType,
-			&level, sizeof(level), &requiredSize, 0) && propType == DEVPROP_TYPE_BYTE)
-		{
-			battery = level;
-			break;
-		}
+        // Most PnP nodes have no Bluetooth battery. Avoid allocating their names.
+        if (!SetupDiGetDevicePropertyW(devInfoSet, &devInfo, &PKEY_BluetoothBattery, &propType,
+            &level, sizeof(level), &requiredSize, 0) || propType != DEVPROP_TYPE_BYTE || level > 100)
+            continue;
+        std::wstring name;
+        const bool matches = readStringProperty(devInfoSet, &devInfo, PKEY_DeviceName, name) &&
+            name.find(wantName) != std::wstring::npos;
+        if (!matches && !(readStringProperty(devInfoSet, &devInfo, PKEY_FriendlyName, name) &&
+            name.find(wantName) != std::wstring::npos)) continue;
+        battery = level;
+        break;
 	}
 
 	SetupDiDestroyDeviceInfoList(devInfoSet);

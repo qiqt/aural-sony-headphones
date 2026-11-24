@@ -66,6 +66,7 @@ V2Snapshot Headphones::getV2Snapshot()
 
 bool Headphones::setV2EqPreset(unsigned char selector, unsigned char preset)
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(_propertyMtx);
     if (selector != 0 || !_v2EqReadyLocked(selector) || !_v2EqCapabilities.at(selector).supports(preset)) return false;
     if (auto curve = _v2EqCurves.find(selector); curve != _v2EqCurves.end() &&
@@ -334,6 +335,7 @@ bool Headphones::_v2AmbientReadyLocked(unsigned char selector) const
 }
 bool Headphones::setV2Ambient(unsigned char selector, SonyV2Ambient::Mode mode, int level, bool voice)
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(_propertyMtx);
     if (!_v2AmbientReadyLocked(selector)) return false;
     auto payload = SonyV2Ambient::buildModeSet(_v2AmbientCapabilities.at(selector), _v2AmbientReports.at(selector), mode, level, voice ? 1 : 0, true);
@@ -353,6 +355,7 @@ bool Headphones::_v2CurveReadyLocked(unsigned char selector) const
 }
 bool Headphones::setV2EqBand(unsigned char selector, size_t index, int signedStep)
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(_propertyMtx);
     if (!_v2CurveReadyLocked(selector)) return false;
     const auto& cap = _v2EqCapabilities.at(selector);
@@ -371,6 +374,7 @@ bool Headphones::setV2EqBand(unsigned char selector, size_t index, int signedSte
 
 void Headphones::refreshV2Values()
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(_propertyMtx);
     if (_conn.getProtocol() != SonyProtocol::V2 || !_v2Capability) return;
     if (_v2SupportsLocked(0x20)) _enqueueQueryLocked(SonyV2::queryBattery());
@@ -404,6 +408,7 @@ bool Headphones::_v2AudioReadyLocked(unsigned char selector) const
 }
 bool Headphones::setV2Audio(unsigned char selector, unsigned char value)
 {
+    UiRevisionGuard changed{_uiRevision};
     std::lock_guard guard(_propertyMtx);
     if (!_v2AudioReadyLocked(selector) || !SonyV2::setAudioState(_v2AudioCapabilities.at(selector), value)) return false;
     _v2AudioValues[selector].setDesired(value); return true;

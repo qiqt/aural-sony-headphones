@@ -137,6 +137,12 @@ It builds by default; pass `-DAURAL_BUILD_TESTS=OFF` at configure time to skip
 it. The test binary is `controller_tests.exe` and can be run directly with Qt
 on `PATH` (CTest prepends it for you).
 
+The Qt CTest build also runs `qml_controls` through Qt's `qmltestrunner`.
+It exercises the real QML controls with a simulated controller, including V2
+slider dragging, keyboard adjustment, and dashboard/EQ visibility. Screenshots
+are saved under `tests/qml-controls` in the build directory. These offscreen
+checks do not connect to Bluetooth devices.
+
 ## QML checks
 
 `qmllint` runs over the whole module. It needs the built module on its import

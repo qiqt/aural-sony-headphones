@@ -208,7 +208,7 @@ void BluetoothWrapper::connect(const std::string& addr, SonyProtocol protocol)
         (this->_protocolDiscovered.load() ? " service-discovered" : " fallback: service discovery inconclusive"));
 	try
 	{
-		this->_connector->connect(addr, this->_protocol.load());
+		this->_connector->connect(addr, this->_protocol.load(), [this] { return this->_aborted.load(); });
 		// disconnect() can run after the discovery check but before the connector
 		// registers its new socket. Never leave that late connection alive.
 		if (this->_aborted.load())

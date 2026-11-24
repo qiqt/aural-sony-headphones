@@ -210,6 +210,7 @@ TEST(transport_cancel_before_connector_starts_closes_late_connection)
     CHECK_THROWS(f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1), RecoverableException);
     CHECK(!f.bt.isConnected());
 
+    CHECK_EQ(f.fake().connectAttempts(), 0); // cancellation precedes blocking connector work
     f.fake().beforeConnect = {};
     f.bt.connect("00:11:22:33:44:55", SonyProtocol::V1);
     CHECK(f.bt.isConnected());

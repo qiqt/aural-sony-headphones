@@ -1030,9 +1030,7 @@ void HeadphonesController::mpDisconnect(int slot)
         emit multipointChanged();
         return;
     }
-    auto conn = _headphones.getConnectedDevices();
-    int dev = (slot == 1) ? conn.first : conn.second;
-    if (dev > 0) _headphones.setMultiPointConnection(slot, 0, dev);
+    _headphones.setMultiPointConnection(slot, 0, -1);
 }
 
 // ---- Connection lifecycle ----
@@ -1470,6 +1468,13 @@ void HeadphonesController::setButtonAssignment(int keyIndex, int presetId)
 
 void HeadphonesController::syncExtras()
 {
+    // Advance time-dependent state even when no device reply or user edit arrived.
+    _headphones.equalizerSavePending();
+    const auto revision = _headphones.uiRevision();
+    if (_extrasRevision == revision && _extrasConnected == connected() && _extrasFocus == _focusOnVoice) return;
+    _extrasRevision = revision;
+    _extrasConnected = connected();
+    _extrasFocus = _focusOnVoice;
     QVariantMap v2;
     if (connected() && isV2()) {
         const auto snapshot = _headphones.getV2Snapshot();
@@ -1805,6 +1810,7 @@ void HeadphonesController::teardownConnection(MultipointChange* changeAtEnd)
 // never inherits the first one's UI values.
 void HeadphonesController::resetUiState()
 {
+    _extrasRevision.reset();
     _connectionInitialized = false;
     _osBatteryLevel = -1;
     _wantBattery = false;

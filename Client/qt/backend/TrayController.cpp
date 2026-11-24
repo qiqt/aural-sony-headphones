@@ -274,8 +274,11 @@ void TrayController::refresh()
     _showAction->setText(_window && _window->isVisible() ? tr("Hide Aural") : tr("Show Aural"));
     _connectionAction->setText(connected ? tr("Disconnect") : tr("Search for devices"));
 
-    _tray.setIcon(connected && battery >= 0 && battery <= 100
-        ? AppIcon::battery(battery) : AppIcon::headset(connected));
+    const int iconKey = !connected ? -2 : battery >= 0 && battery <= 100 ? battery : -1;
+    if (iconKey != _iconKey) {
+        _iconKey = iconKey;
+        _tray.setIcon(iconKey >= 0 ? AppIcon::battery(iconKey) : AppIcon::headset(connected));
+    }
     QString tip = connected ? _controller->deviceModel() : tr("Aural - no device connected");
     if (connected && battery >= 0)
         tip += tr(" - %1%").arg(battery);

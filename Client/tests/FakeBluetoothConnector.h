@@ -135,10 +135,12 @@ public:
         _serviceV2 = v2;
     }
 
-	void connect(const std::string& addr, SonyProtocol protocol) override
+	void connect(const std::string& addr, SonyProtocol protocol,
+        const std::function<bool()>& cancelled = {}) override
 	{
 		if (beforeConnect) beforeConnect();
 		std::unique_lock<std::mutex> guard(_mtx);
+		if (cancelled && cancelled()) throw RecoverableException("fake: cancelled before socket registration", true);
 		++_connectAttempts;
 		_connectAborted = false;
 		_cv.notify_all();

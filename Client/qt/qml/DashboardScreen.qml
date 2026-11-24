@@ -94,7 +94,7 @@ Item {
 
             // --- Quick features ---
             Rectangle {
-                visible: Hp.systemSettingsAvailable || Hp.supportsSpeakToChat
+                visible: Hp.dseeAvailable || Hp.voiceGuidanceAvailable
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
                 radius: Theme.radiusLg; color: Theme.surfaceContainer; border.color: Theme.outlineVariant; border.width: 1

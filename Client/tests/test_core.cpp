@@ -108,3 +108,17 @@ TEST(core_feature_commands_match_packet_layouts)
     CHECK(Buffer(command.begin(), command.begin() + 4) == hex("3c 01 00 01"));
     CHECK(std::string(command.begin() + 4, command.end()) == "01:23:45:67:89:ab");
 }
+
+TEST(core_ui_revision_changes_on_mutation_but_not_reads)
+{
+    EngineFixture f;
+    auto revision = f.hp.uiRevision();
+    f.hp.setAsmLevel(12);
+    CHECK(f.hp.uiRevision() > revision);
+    revision = f.hp.uiRevision();
+    (void)f.hp.getStatuses();
+    (void)f.hp.getV2Snapshot();
+    CHECK_EQ(f.hp.uiRevision(), revision);
+    f.hp.resetState();
+    CHECK(f.hp.uiRevision() > revision);
+}

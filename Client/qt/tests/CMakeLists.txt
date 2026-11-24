@@ -42,6 +42,13 @@ target_link_libraries(controller_tests PRIVATE Qt6::Core Qt6::Test Threads::Thre
 add_test(NAME controller COMMAND controller_tests)
 set_tests_properties(controller PROPERTIES TIMEOUT 180)
 
+add_test(NAME qml_controls COMMAND ${CMAKE_COMMAND}
+    "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+    "-DTEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/qml-controls"
+    "-DRUNNER=$<TARGET_FILE_DIR:Qt6::Core>/qmltestrunner${CMAKE_EXECUTABLE_SUFFIX}"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/run-qml-tests.cmake")
+set_tests_properties(qml_controls PROPERTIES TIMEOUT 90)
+
 if (WIN32)
     # ctest launches the binary with the ambient environment, which on a developer machine
     # does not have Qt on PATH - the run then dies with 0xc0000135 (DLL not found) before it

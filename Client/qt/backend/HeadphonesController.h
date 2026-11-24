@@ -482,4 +482,7 @@ private:
     QVariantList _mpDevices;
 
     bool _demo = false; // dev-only (AURAL_DEMO env): fake a connected device, no Bluetooth
+    std::optional<unsigned long long> _extrasRevision;
+    bool _extrasConnected = false;
+    bool _extrasFocus = false;
 };

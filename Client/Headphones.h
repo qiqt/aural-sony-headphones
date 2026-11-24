@@ -287,6 +287,8 @@ struct V2Snapshot {
 
 class Headphones {
 public:
+    // Presentation caches invalidate after completed edits, replies, sends or resets.
+    unsigned long long uiRevision() const { return _uiRevision.load(); }
 	Headphones(BluetoothWrapper& conn);
     V2Snapshot getV2Snapshot();
     void refreshV2Values();
@@ -325,6 +327,8 @@ public:
 	// Multipoint. Returns copies because the Listener thread can rewrite the list at any time.
 	std::vector<BluetoothDevice> getDevices();
 	std::pair<int, int> getConnectedDevices();
+    // oldDevice == -1 resolves the current slot atomically. Addresses are retained
+    // at request time so a subsequent list reorder cannot retarget the command.
 	void setMultiPointConnection(int connectionId, int newDevice, int oldDevice);
 
 	// The last complete NC/ASM report, every field kept. Empty until the device sends one.
@@ -494,8 +498,6 @@ private:
 	void queryNcAsmState();
 	void queryDeviceCapabilities();
 	void queryDevices();
-	void _connectDevice(int deviceIdx);
-	void _disconnectDevice(int deviceIdx);
 
 	// Reply handlers, one per table. Each decodes first and only then takes the lock.
 	void _applyV2(const CommandSerializer::Message& msg);
@@ -590,6 +592,7 @@ private:
 	// index 0 is the empty "no device" slot; _dev1/_dev2 index into _savedDevices
 	std::vector<BluetoothDevice> _savedDevices = { BluetoothDevice{"", ""} };
 	Property<int> _dev1, _dev2;
+    std::array<std::pair<std::string, std::string>, 2> _multipointTargets;
 
 	Property<EqualizerConfig> _eq;
 	enum class EqSaveStep { Idle, Select, WaitSelection, Curve, WaitCurve };
@@ -642,6 +645,11 @@ private:
     std::optional<SonyV2::CodecStatus> _v2Codec;
     std::optional<SonyV2::UpscalingEffect> _v2Effect;
     std::condition_variable _v2Reply;
+    struct UiRevisionGuard {
+        std::atomic<unsigned long long>& revision;
+        ~UiRevisionGuard() { revision.fetch_add(1); }
+    };
+    std::atomic<unsigned long long> _uiRevision{0};
     std::mutex _propertyMtx;
 
 	BluetoothWrapper& _conn;

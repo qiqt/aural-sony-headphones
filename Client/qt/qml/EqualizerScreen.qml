@@ -27,7 +27,7 @@ Item {
         // screen is the app's last choice, not necessarily the device's.
         Rectangle {
             Layout.fillWidth: true
-            visible: Hp.settingStatus.equalizer !== "confirmed"
+            visible: Hp.settingStatus.equalizer === "unknown"
             radius: Theme.radius
             color: Theme.surfaceContainerLow
             border.color: Theme.outlineVariant; border.width: 1

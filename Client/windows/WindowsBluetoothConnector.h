@@ -12,7 +12,8 @@ public:
     WindowsBluetoothConnector();
     ~WindowsBluetoothConnector() override;
 
-    void connect(const std::string& address, SonyProtocol protocol) override;
+    void connect(const std::string& address, SonyProtocol protocol,
+        const std::function<bool()>& cancelled = {}) override;
     std::optional<SonyProtocol> discoverProtocol(const std::string& address) override;
     int send(char* bytes, size_t size) override;
     int recv(char* bytes, size_t size) override;

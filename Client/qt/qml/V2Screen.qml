@@ -17,9 +17,10 @@ ScrollView {
         Text { visible: !!Hp.v2Info.codec; text: "Codec: " + (Hp.v2Info.codec || ""); color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
         Text { visible: !!Hp.v2Info.effect; text: "DSEE effect: " + (Hp.v2Info.effect || ""); color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
         Repeater {
-            model: Hp.v2Info.audio || []
+            model: (Hp.v2Info.audio || []).length
             delegate: ColumnLayout {
-                required property var modelData
+                required property int index
+                readonly property var modelData: (Hp.v2Info.audio || [])[index] || ({})
                 Layout.fillWidth: true
                 Text { text: modelData.title; color: Theme.textPrimary; font.pixelSize: Theme.headlineMd }
                 SegmentedControl {
@@ -33,9 +34,10 @@ ScrollView {
             }
         }
         Repeater {
-            model: Hp.v2Info.ambient || []
+            model: (Hp.v2Info.ambient || []).length
             delegate: Rectangle {
-                required property var modelData
+                required property int index
+                readonly property var modelData: (Hp.v2Info.ambient || [])[index] || ({})
                 Layout.fillWidth: true
                 radius: Theme.radiusLg; color: Theme.surfaceContainer
                 border.color: Theme.outlineVariant; border.width: 1
@@ -52,6 +54,7 @@ ScrollView {
                         onActivated: (i) => Hp.setV2Ambient(modelData.selector, i, modelData.level, modelData.voice)
                     }
                     AudioSlider {
+                        objectName: "v2AmbientSlider"
                         Layout.fillWidth: true
                         enabled: modelData.ready && modelData.mode === 2
                         from: modelData.minimum; to: modelData.maximum; stepSize: modelData.step
@@ -69,9 +72,11 @@ ScrollView {
             }
         }
         Repeater {
-            model: Hp.v2Info.equalizers || []
+            model: (Hp.v2Info.equalizers || []).length
             delegate: Rectangle {
-                required property var modelData
+                id: equalizerCard
+                required property int index
+                readonly property var modelData: (Hp.v2Info.equalizers || [])[index] || ({})
                 Layout.fillWidth: true
                 radius: Theme.radiusLg; color: Theme.surfaceContainer
                 border.color: Theme.outlineVariant; border.width: 1
@@ -90,13 +95,15 @@ ScrollView {
                     }
                     Text { Layout.fillWidth: true; text: modelData.bandsEditable ? "Adjust each band below." : modelData.read ? "Aural can show this equalizer curve, but can't edit its bands yet." : "Reading the equalizer setting..."; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd; wrapMode: Text.WordWrap }
                     Repeater {
-                        model: modelData.bands
+                        model: (equalizerCard.modelData.bands || []).length
                         delegate: RowLayout {
-                            required property var modelData
-                            readonly property var equalizer: eqCol.parent.modelData
+                            required property int index
+                            readonly property var modelData: (equalizerCard.modelData.bands || [])[index] || ({})
+                            readonly property var equalizer: equalizerCard.modelData
                             Layout.fillWidth: true
                             Text { Layout.preferredWidth: 85; text: modelData.label; color: Theme.textSecondary; font.pixelSize: Theme.bodyMd }
                             AudioSlider {
+                                objectName: "v2EqSlider"
                                 Layout.fillWidth: true
                                 enabled: equalizer.bandsEditable
                                 from: equalizer.minimum; to: equalizer.maximum; stepSize: 1

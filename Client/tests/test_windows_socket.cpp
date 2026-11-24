@@ -1,5 +1,6 @@
 #include "../windows/SocketChannel.h"
 #include <ws2tcpip.h>
+#include "../windows/WindowsText.h"
 #include "TestHarness.h"
 #include <future>
 #include <memory>
@@ -164,4 +165,12 @@ TEST(windows_socket_shutdown_releases_a_blocked_writer)
     pair.client->stop();
     CHECK(writer.wait_for(std::chrono::seconds(2)) == std::future_status::ready);
     CHECK(writer.get());
+}
+
+TEST(windows_socket_utf8_device_names_round_trip)
+{
+    CHECK(windowsUtf16("Alex\xe2\x80\x99s WH-1000XM4") == L"Alex\u2019s WH-1000XM4");
+    CHECK(windowsUtf16("\xe9\x9f\xb3") == L"\u97f3");
+    CHECK(windowsUtf16("\xf0\x9f\x8e\xa7") == L"\U0001f3a7");
+    CHECK(windowsUtf16("\xff").empty());
 }
